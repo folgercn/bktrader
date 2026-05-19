@@ -1,0 +1,164 @@
+{
+  "note": "Research-only walk-forward Bayesian T3 event quality scores. Scores use only prior-month strict lifecycle trade labels; selected event CSVs are intended for external-event lifecycle replay.",
+  "trades_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_probability_overlay_extended/t3_probability_overlay_trades.csv",
+  "events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_probability_overlay_extended/t3_probability_overlay_scored_events.csv",
+  "min_train_months": 3,
+  "min_group_trades": 3,
+  "prior_strength": 8.0,
+  "events_scored": 417,
+  "events_score_ready": 310,
+  "selected_files": {
+    "bayes_ge_m0p010": "research/entry_redesign/scripts/output/timing_probability_unified/t3_bayesian_event_filter_extended/selected_events_bayes_ge_m0p010.csv",
+    "bayes_ge_0p000": "research/entry_redesign/scripts/output/timing_probability_unified/t3_bayesian_event_filter_extended/selected_events_bayes_ge_0p000.csv",
+    "bayes_ge_0p005": "research/entry_redesign/scripts/output/timing_probability_unified/t3_bayesian_event_filter_extended/selected_events_bayes_ge_0p005.csv",
+    "bayes_ge_0p010": "research/entry_redesign/scripts/output/timing_probability_unified/t3_bayesian_event_filter_extended/selected_events_bayes_ge_0p010.csv",
+    "bayes_ge_0p020": "research/entry_redesign/scripts/output/timing_probability_unified/t3_bayesian_event_filter_extended/selected_events_bayes_ge_0p020.csv"
+  },
+  "thresholds": [
+    {
+      "threshold_label": "bayes_ge_m0p010",
+      "score_threshold_pct": -0.01,
+      "selected_events": 228,
+      "selected_labeled_trades": 51,
+      "avg_selected_score_pct": 0.008887,
+      "avg_labeled_trade_net_pct": -0.002479,
+      "labeled_win_rate_pct": 43.14,
+      "label_net_after_fee_pct": -0.12645,
+      "label_worst_symbol_month_pct": -0.341424,
+      "label_negative_symbol_months": 7,
+      "label_by_month": {
+        "2025-06": 0.0,
+        "2025-07": 0.0,
+        "2025-08": 0.0,
+        "2025-09": 0.028242,
+        "2025-10": -0.030743,
+        "2025-11": -0.028608,
+        "2025-12": -0.369349,
+        "2026-01": -0.100295,
+        "2026-02": 0.365414,
+        "2026-03": 0.066769,
+        "2026-04": -0.057881
+      },
+      "label_by_symbol": {
+        "BTCUSDT": -0.28842,
+        "ETHUSDT": 0.16197
+      }
+    },
+    {
+      "threshold_label": "bayes_ge_0p020",
+      "score_threshold_pct": 0.02,
+      "selected_events": 44,
+      "selected_labeled_trades": 9,
+      "avg_selected_score_pct": 0.040217,
+      "avg_labeled_trade_net_pct": -0.053681,
+      "labeled_win_rate_pct": 22.22,
+      "label_net_after_fee_pct": -0.483125,
+      "label_worst_symbol_month_pct": -0.086235,
+      "label_negative_symbol_months": 7,
+      "label_by_month": {
+        "2025-06": 0.0,
+        "2025-07": 0.0,
+        "2025-08": 0.0,
+        "2025-09": 0.0,
+        "2025-10": -0.077067,
+        "2025-11": -0.066537,
+        "2025-12": -0.144093,
+        "2026-01": -0.051312,
+        "2026-02": 0.0,
+        "2026-03": -0.086235,
+        "2026-04": -0.057881
+      },
+      "label_by_symbol": {
+        "BTCUSDT": -0.246933,
+        "ETHUSDT": -0.236192
+      }
+    },
+    {
+      "threshold_label": "bayes_ge_0p000",
+      "score_threshold_pct": 0.0,
+      "selected_events": 139,
+      "selected_labeled_trades": 31,
+      "avg_selected_score_pct": 0.017946,
+      "avg_labeled_trade_net_pct": -0.020746,
+      "labeled_win_rate_pct": 41.94,
+      "label_net_after_fee_pct": -0.643123,
+      "label_worst_symbol_month_pct": -0.285718,
+      "label_negative_symbol_months": 8,
+      "label_by_month": {
+        "2025-06": 0.0,
+        "2025-07": 0.0,
+        "2025-08": 0.0,
+        "2025-09": 0.013576,
+        "2025-10": -0.030743,
+        "2025-11": 0.102806,
+        "2025-12": -0.369349,
+        "2026-01": -0.044187,
+        "2026-02": 0.0,
+        "2026-03": -0.257346,
+        "2026-04": -0.057881
+      },
+      "label_by_symbol": {
+        "BTCUSDT": -0.086593,
+        "ETHUSDT": -0.55653
+      }
+    },
+    {
+      "threshold_label": "bayes_ge_0p005",
+      "score_threshold_pct": 0.005,
+      "selected_events": 101,
+      "selected_labeled_trades": 26,
+      "avg_selected_score_pct": 0.023938,
+      "avg_labeled_trade_net_pct": -0.029029,
+      "labeled_win_rate_pct": 38.46,
+      "label_net_after_fee_pct": -0.75476,
+      "label_worst_symbol_month_pct": -0.285718,
+      "label_negative_symbol_months": 7,
+      "label_by_month": {
+        "2025-06": 0.0,
+        "2025-07": 0.0,
+        "2025-08": 0.0,
+        "2025-09": 0.013576,
+        "2025-10": -0.062695,
+        "2025-11": -0.0502,
+        "2025-12": -0.369349,
+        "2026-01": -0.051312,
+        "2026-02": 0.0,
+        "2026-03": -0.1769,
+        "2026-04": -0.057881
+      },
+      "label_by_symbol": {
+        "BTCUSDT": -0.246724,
+        "ETHUSDT": -0.508035
+      }
+    },
+    {
+      "threshold_label": "bayes_ge_0p010",
+      "score_threshold_pct": 0.01,
+      "selected_events": 78,
+      "selected_labeled_trades": 24,
+      "avg_selected_score_pct": 0.028991,
+      "avg_labeled_trade_net_pct": -0.032224,
+      "labeled_win_rate_pct": 37.5,
+      "label_net_after_fee_pct": -0.773381,
+      "label_worst_symbol_month_pct": -0.227837,
+      "label_negative_symbol_months": 7,
+      "label_by_month": {
+        "2025-06": 0.0,
+        "2025-07": 0.0,
+        "2025-08": 0.0,
+        "2025-09": 0.013576,
+        "2025-10": -0.062695,
+        "2025-11": -0.126701,
+        "2025-12": -0.311468,
+        "2026-01": -0.051312,
+        "2026-02": 0.0,
+        "2026-03": -0.1769,
+        "2026-04": -0.057881
+      },
+      "label_by_symbol": {
+        "BTCUSDT": -0.323226,
+        "ETHUSDT": -0.450155
+      }
+    }
+  ]
+}

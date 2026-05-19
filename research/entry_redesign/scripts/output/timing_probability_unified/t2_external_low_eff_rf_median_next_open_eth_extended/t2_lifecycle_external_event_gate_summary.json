@@ -1,0 +1,321 @@
+{
+  "note": "Research-only strict lifecycle replay for probability-selected external T2 events. Native original_t2 is disabled; external RF events are injected as explicit breakout locks.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "external_entry_mode": "next_second_open",
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 11
+  },
+  "candidate_specs": [
+    {
+      "label": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "external_shape_name": "low_eff_rf_rank_median_000",
+      "external_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_context_model_lead_combo_active_events_low_eff_rf_rank_median_000.csv",
+      "confirmation_events_path": "",
+      "external_entry_mode": "next_second_open",
+      "read": "Inject low_eff_rf_rank_median_000 active events as explicit breakout locks; native original_t2 remains disabled; event source=raw_touch; external entry mode=next_second_open."
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "calendar_silo_sum_pct": -0.59,
+      "calendar_avg_symbol_month_pct": -0.053636,
+      "worst_calendar_silo_pct": -0.7,
+      "negative_calendar_silos": 6,
+      "traded_symbol_months": 11,
+      "flat_symbol_months": 0,
+      "total_trades": 88,
+      "t3_trades": 53,
+      "external_trades": 35,
+      "t3_net_pnl_pct": 3.34923,
+      "external_net_pnl_pct": -0.50281,
+      "external_events_available": 28,
+      "external_locks": 27,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 49737,
+        "no_reclaim_cross": 1347902,
+        "missing_prev_close": 227
+      },
+      "by_month": {
+        "2025-06": -0.18,
+        "2025-07": 0.34,
+        "2025-08": 0.07,
+        "2025-09": 0.71,
+        "2025-10": 0.29,
+        "2025-11": -0.47,
+        "2025-12": -0.7,
+        "2026-01": -0.27,
+        "2026-02": 0.09,
+        "2026-03": -0.1,
+        "2026-04": -0.37
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.59
+      }
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.18,
+      "final_balance": 99824.26,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "external_trades": 0,
+      "t3_net_pnl_pct": -0.01583,
+      "external_net_pnl_pct": 0.0,
+      "external_events_available": 0,
+      "external_locks": 0,
+      "external_lock_reasons": {},
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 4526,
+        "no_reclaim_cross": 92360,
+        "missing_prev_close": 16
+      },
+      "elapsed_seconds": 65.14
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.34,
+      "final_balance": 100338.52,
+      "total_trades": 8,
+      "t3_trades": 8,
+      "external_trades": 0,
+      "t3_net_pnl_pct": 0.65894,
+      "external_net_pnl_pct": 0.0,
+      "external_events_available": 0,
+      "external_locks": 0,
+      "external_lock_reasons": {},
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5557,
+        "no_reclaim_cross": 116943,
+        "missing_prev_close": 21
+      },
+      "elapsed_seconds": 67.52
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.07,
+      "final_balance": 100071.91,
+      "total_trades": 2,
+      "t3_trades": 2,
+      "external_trades": 0,
+      "t3_net_pnl_pct": 0.15188,
+      "external_net_pnl_pct": 0.0,
+      "external_events_available": 0,
+      "external_locks": 0,
+      "external_lock_reasons": {},
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 2834,
+        "no_reclaim_cross": 107682,
+        "missing_prev_close": 18
+      },
+      "elapsed_seconds": 67.03
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": 0.71,
+      "final_balance": 100709.8,
+      "total_trades": 9,
+      "t3_trades": 8,
+      "external_trades": 1,
+      "t3_net_pnl_pct": 1.09292,
+      "external_net_pnl_pct": -0.02152,
+      "external_events_available": 1,
+      "external_locks": 1,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 1
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 2572,
+        "no_reclaim_cross": 113143,
+        "missing_prev_close": 20
+      },
+      "elapsed_seconds": 65.04
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.29,
+      "final_balance": 100292.84,
+      "total_trades": 3,
+      "t3_trades": 3,
+      "external_trades": 0,
+      "t3_net_pnl_pct": 0.41294,
+      "external_net_pnl_pct": 0.0,
+      "external_events_available": 0,
+      "external_locks": 0,
+      "external_lock_reasons": {},
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 2356,
+        "no_reclaim_cross": 75614,
+        "missing_prev_close": 14
+      },
+      "elapsed_seconds": 66.11
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": -0.47,
+      "final_balance": 99525.48,
+      "total_trades": 8,
+      "t3_trades": 2,
+      "external_trades": 6,
+      "t3_net_pnl_pct": -0.04671,
+      "external_net_pnl_pct": -0.10849,
+      "external_events_available": 6,
+      "external_locks": 6,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 6
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 3435,
+        "no_reclaim_cross": 109434,
+        "missing_prev_close": 17
+      },
+      "elapsed_seconds": 64.37
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": -0.7,
+      "final_balance": 99299.3,
+      "total_trades": 15,
+      "t3_trades": 5,
+      "external_trades": 10,
+      "t3_net_pnl_pct": -0.08565,
+      "external_net_pnl_pct": -0.05708,
+      "external_events_available": 8,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 7
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5474,
+        "no_reclaim_cross": 135200,
+        "missing_prev_close": 21
+      },
+      "elapsed_seconds": 68.39
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.27,
+      "final_balance": 99731.93,
+      "total_trades": 6,
+      "t3_trades": 3,
+      "external_trades": 3,
+      "t3_net_pnl_pct": 0.01258,
+      "external_net_pnl_pct": -0.04086,
+      "external_events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 3
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 3631,
+        "no_reclaim_cross": 138185,
+        "missing_prev_close": 21
+      },
+      "elapsed_seconds": 67.53
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.09,
+      "final_balance": 100087.07,
+      "total_trades": 10,
+      "t3_trades": 7,
+      "external_trades": 3,
+      "t3_net_pnl_pct": 0.55986,
+      "external_net_pnl_pct": -0.07254,
+      "external_events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 3
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5730,
+        "no_reclaim_cross": 139609,
+        "missing_prev_close": 24
+      },
+      "elapsed_seconds": 62.69
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": -0.1,
+      "final_balance": 99899.25,
+      "total_trades": 16,
+      "t3_trades": 9,
+      "external_trades": 7,
+      "t3_net_pnl_pct": 0.64305,
+      "external_net_pnl_pct": -0.12403,
+      "external_events_available": 5,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 5
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 7758,
+        "no_reclaim_cross": 197886,
+        "missing_prev_close": 35
+      },
+      "elapsed_seconds": 69.19
+    },
+    {
+      "candidate": "low_eff_rf_rank_median_external_raw_touch_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.37,
+      "final_balance": 99627.37,
+      "total_trades": 7,
+      "t3_trades": 2,
+      "external_trades": 5,
+      "t3_net_pnl_pct": -0.03475,
+      "external_net_pnl_pct": -0.07829,
+      "external_events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 2
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5864,
+        "no_reclaim_cross": 121846,
+        "missing_prev_close": 20
+      },
+      "elapsed_seconds": 66.77
+    }
+  ]
+}

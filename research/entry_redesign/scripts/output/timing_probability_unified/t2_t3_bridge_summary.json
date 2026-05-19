@@ -1,0 +1,192 @@
+{
+  "note": "Research-only bridge. T2 adverse10 event-ledger and T3 strict lifecycle metrics are normalized to percent but not added.",
+  "caveats": {
+    "t2_lead_trade_ledger_active_months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10"
+    ],
+    "t2_lead_trade_ledger_note": "The lead adverse10 per-trade artifact used here only contains active canonical lead rows for these months. Forward retrain canonical metrics are covered by the merge matrix, but not by this per-month bridge ledger."
+  },
+  "candidates": [
+    {
+      "family": "t2_event_ledger",
+      "candidate": "canonical_lead",
+      "contract": "next_adverse_xslip10bps",
+      "scope": "ETHUSDT only",
+      "calendar_sum_pct": 22.971648,
+      "delta_vs_baseline_pct": 0.0,
+      "worst_month_pct": 0.0,
+      "negative_months": 0,
+      "trades": 62,
+      "source": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_lead_adverse10_trades.csv",
+      "read": "current production-aligned T2 lead under adverse10"
+    },
+    {
+      "family": "t2_event_ledger",
+      "candidate": "low_eff_rf_rank_median_000_combo",
+      "contract": "next_adverse_xslip10bps",
+      "scope": "ETHUSDT only",
+      "calendar_sum_pct": 28.287125,
+      "delta_vs_baseline_pct": 5.315477,
+      "worst_month_pct": -0.473563,
+      "negative_months": 2,
+      "trades": 89,
+      "source": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_context_model_lead_combo_extra_adverse10_trades_low_eff_rf_rank_median_000.csv",
+      "read": "preferred hard-select additive T2 expansion to falsify"
+    },
+    {
+      "family": "t2_event_ledger",
+      "candidate": "wf3_low_eff_low_atr_ctx4h_up_hard_combo",
+      "contract": "next_adverse_xslip10bps",
+      "scope": "ETHUSDT only",
+      "calendar_sum_pct": 27.604805,
+      "delta_vs_baseline_pct": 4.633157,
+      "worst_month_pct": -0.184894,
+      "negative_months": 1,
+      "trades": 77,
+      "source": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_extra_adverse10_trades_wf3_low_eff_low_atr_ctx4h_up.csv",
+      "read": "hard 4h context leg, useful proxy for scaled context control"
+    },
+    {
+      "family": "t2_event_ledger",
+      "candidate": "wf3_low_eff_low_atr_ctx4h_scaled025_combo",
+      "contract": "next_adverse_xslip10bps",
+      "scope": "ETHUSDT only",
+      "calendar_sum_pct": 27.768565,
+      "delta_vs_baseline_pct": 4.796917,
+      "worst_month_pct": -0.137868,
+      "negative_months": 1,
+      "trades": 103,
+      "source": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_extra_adverse10_trades_wf3_low_eff_low_atr_ctx4h_scaled025.csv",
+      "read": "derived per-trade scaled ledger; best current T2 risk-control leg"
+    },
+    {
+      "family": "t3_strict_lifecycle",
+      "candidate": "t3_min_hold_sl_60m_t3_split",
+      "contract": "strict_next_second_cross lifecycle",
+      "scope": "ETHUSDT/BTCUSDT T3 split",
+      "calendar_sum_pct": 3.84584,
+      "delta_vs_baseline_pct": null,
+      "worst_month_pct": -0.22812,
+      "negative_months": 2,
+      "trades": 100,
+      "source": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_exit_60m_extended/t3_lifecycle_exit_sweep_summary.json",
+      "read": "watch-only T3 risk-shaping leg; not additive to T2 event ledger yet"
+    }
+  ],
+  "monthly_bridge": [
+    {
+      "month": "2025-06",
+      "t2_lead_adverse10_pct": 4.49365,
+      "t2_low_eff_rf_median_combo_pct": 4.49365,
+      "t2_low_eff_rf_median_extra_pct": 0.0,
+      "t2_ctx4h_scaled025_combo_pct": 4.49365,
+      "t2_ctx4h_scaled025_extra_pct": 0.0,
+      "t3_min_hold_60m_t3_pnl_pct": -0.05775,
+      "bridge_read": "T3 split weakens a positive T2 month under strict lifecycle"
+    },
+    {
+      "month": "2025-07",
+      "t2_lead_adverse10_pct": 4.640439,
+      "t2_low_eff_rf_median_combo_pct": 4.640439,
+      "t2_low_eff_rf_median_extra_pct": 0.0,
+      "t2_ctx4h_scaled025_combo_pct": 4.640439,
+      "t2_ctx4h_scaled025_extra_pct": 0.0,
+      "t3_min_hold_60m_t3_pnl_pct": 0.67951,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2025-08",
+      "t2_lead_adverse10_pct": 7.34168,
+      "t2_low_eff_rf_median_combo_pct": 7.34168,
+      "t2_low_eff_rf_median_extra_pct": 0.0,
+      "t2_ctx4h_scaled025_combo_pct": 7.34168,
+      "t2_ctx4h_scaled025_extra_pct": 0.0,
+      "t3_min_hold_60m_t3_pnl_pct": 0.12723,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2025-09",
+      "t2_lead_adverse10_pct": 5.100058,
+      "t2_low_eff_rf_median_combo_pct": 6.05832,
+      "t2_low_eff_rf_median_extra_pct": 0.958262,
+      "t2_ctx4h_scaled025_combo_pct": 6.05832,
+      "t2_ctx4h_scaled025_extra_pct": 0.958262,
+      "t3_min_hold_60m_t3_pnl_pct": 1.02235,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2025-10",
+      "t2_lead_adverse10_pct": 1.395821,
+      "t2_low_eff_rf_median_combo_pct": 1.395821,
+      "t2_low_eff_rf_median_extra_pct": 0.0,
+      "t2_ctx4h_scaled025_combo_pct": 1.074811,
+      "t2_ctx4h_scaled025_extra_pct": -0.32101,
+      "t3_min_hold_60m_t3_pnl_pct": 0.61849,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2025-11",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": 1.557188,
+      "t2_low_eff_rf_median_extra_pct": 1.557188,
+      "t2_ctx4h_scaled025_combo_pct": 0.076992,
+      "t2_ctx4h_scaled025_extra_pct": 0.076992,
+      "t3_min_hold_60m_t3_pnl_pct": 0.1685,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2025-12",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": -0.473563,
+      "t2_low_eff_rf_median_extra_pct": -0.473563,
+      "t2_ctx4h_scaled025_combo_pct": -0.137868,
+      "t2_ctx4h_scaled025_extra_pct": -0.137868,
+      "t3_min_hold_60m_t3_pnl_pct": -0.22812,
+      "bridge_read": "both weak; residual-risk month"
+    },
+    {
+      "month": "2026-01",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": -0.372734,
+      "t2_low_eff_rf_median_extra_pct": -0.372734,
+      "t2_ctx4h_scaled025_combo_pct": 0.319687,
+      "t2_ctx4h_scaled025_extra_pct": 0.319687,
+      "t3_min_hold_60m_t3_pnl_pct": 0.05965,
+      "bridge_read": "T3 split offsets a weak T2 month, but contracts differ"
+    },
+    {
+      "month": "2026-02",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": 0.604408,
+      "t2_low_eff_rf_median_extra_pct": 0.604408,
+      "t2_ctx4h_scaled025_combo_pct": 0.338019,
+      "t2_ctx4h_scaled025_extra_pct": 0.338019,
+      "t3_min_hold_60m_t3_pnl_pct": 0.7726,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2026-03",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": 1.982591,
+      "t2_low_eff_rf_median_extra_pct": 1.982591,
+      "t2_ctx4h_scaled025_combo_pct": 2.538148,
+      "t2_ctx4h_scaled025_extra_pct": 2.538148,
+      "t3_min_hold_60m_t3_pnl_pct": 0.63655,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    },
+    {
+      "month": "2026-04",
+      "t2_lead_adverse10_pct": 0.0,
+      "t2_low_eff_rf_median_combo_pct": 1.059325,
+      "t2_low_eff_rf_median_extra_pct": 1.059325,
+      "t2_ctx4h_scaled025_combo_pct": 1.024687,
+      "t2_ctx4h_scaled025_extra_pct": 1.024687,
+      "t3_min_hold_60m_t3_pnl_pct": 0.04683,
+      "bridge_read": "both positive; bridge replay should test coexistence"
+    }
+  ]
+}

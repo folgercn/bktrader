@@ -1,0 +1,309 @@
+{
+  "note": "Research-only strict lifecycle replay for filtered scored T3 event sources. Native original_t2 and native t3_swing locks are disabled; external events are injected as t3_swing so T3 60m exit overrides still apply.",
+  "scored_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_probability_overlay_extended/t3_probability_overlay_scored_events.csv",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "external_entry_mode": "next_second_adverse",
+  "t3_size_scale": 1.5,
+  "t3_reentry_size_schedule": [
+    0.30000000000000004,
+    0.15000000000000002
+  ],
+  "t3_exit_overrides": {
+    "min_hold_seconds_before_sl": 3600.0
+  },
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 11
+  },
+  "candidate_specs": [
+    {
+      "label": "all_speed_abs_ge_0p35",
+      "side": null,
+      "speed_abs_min": 0.35,
+      "speed_abs_max": null,
+      "extension_abs_min": null,
+      "extension_abs_max": null,
+      "rf_min": null,
+      "rf_max": null,
+      "timing": null,
+      "read": "both sides with absolute 300s speed >= 0.35 ATR; direct-entry diagnostic"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "filters": {
+        "speed_abs_min": 0.35
+      },
+      "calendar_silo_sum_pct": 8.53,
+      "calendar_avg_symbol_month_pct": 0.775455,
+      "worst_calendar_silo_pct": -0.62,
+      "negative_calendar_silos": 3,
+      "traded_symbol_months": 11,
+      "flat_symbol_months": 0,
+      "total_trades": 163,
+      "t3_trades": 163,
+      "t3_net_pnl_pct": 18.33619,
+      "events_available": 74,
+      "external_locks": 71,
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 546163,
+        "missing_prev_close": 101
+      },
+      "by_month": {
+        "2025-06": -0.33,
+        "2025-07": 0.76,
+        "2025-08": 0.74,
+        "2025-09": -0.62,
+        "2025-10": 0.61,
+        "2025-11": 0.34,
+        "2025-12": 1.16,
+        "2026-01": -0.35,
+        "2026-02": 4.4,
+        "2026-03": 0.96,
+        "2026-04": 0.86
+      },
+      "by_symbol": {
+        "ETHUSDT": 8.53
+      }
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.33,
+      "final_balance": 99673.97,
+      "total_trades": 16,
+      "t3_trades": 16,
+      "t3_net_pnl_pct": 0.63147,
+      "events_available": 6,
+      "external_locks": 5,
+      "external_lock_reasons": {
+        "t3_swing": 5
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 51832,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 66.38
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.76,
+      "final_balance": 100756.42,
+      "total_trades": 15,
+      "t3_trades": 15,
+      "t3_net_pnl_pct": 1.65763,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 54847,
+        "missing_prev_close": 11
+      },
+      "elapsed_seconds": 68.89
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.74,
+      "final_balance": 100737.64,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 1.88193,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 64518,
+        "missing_prev_close": 12
+      },
+      "elapsed_seconds": 68.09
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": -0.62,
+      "final_balance": 99375.06,
+      "total_trades": 13,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": 0.15232,
+      "events_available": 7,
+      "external_locks": 7,
+      "external_lock_reasons": {
+        "t3_swing": 7
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 39079,
+        "missing_prev_close": 6
+      },
+      "elapsed_seconds": 65.87
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.61,
+      "final_balance": 100612.04,
+      "total_trades": 4,
+      "t3_trades": 4,
+      "t3_net_pnl_pct": 0.85257,
+      "events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "t3_swing": 2
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 13959,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 68.61
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": 0.34,
+      "final_balance": 100340.44,
+      "total_trades": 18,
+      "t3_trades": 18,
+      "t3_net_pnl_pct": 1.41651,
+      "events_available": 3,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 36428,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 66.02
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": 1.16,
+      "final_balance": 101161.8,
+      "total_trades": 3,
+      "t3_trades": 3,
+      "t3_net_pnl_pct": 1.34185,
+      "events_available": 4,
+      "external_locks": 3,
+      "external_lock_reasons": {
+        "t3_swing": 3
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 19758,
+        "missing_prev_close": 3
+      },
+      "elapsed_seconds": 67.64
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.35,
+      "final_balance": 99647.81,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 0.75474,
+      "events_available": 12,
+      "external_locks": 12,
+      "external_lock_reasons": {
+        "t3_swing": 12
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 66421,
+        "missing_prev_close": 11
+      },
+      "elapsed_seconds": 68.85
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 4.4,
+      "final_balance": 104395.81,
+      "total_trades": 24,
+      "t3_trades": 24,
+      "t3_net_pnl_pct": 5.8862,
+      "events_available": 9,
+      "external_locks": 9,
+      "external_lock_reasons": {
+        "t3_swing": 9
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 81258,
+        "missing_prev_close": 16
+      },
+      "elapsed_seconds": 61.88
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": 0.96,
+      "final_balance": 100964.34,
+      "total_trades": 19,
+      "t3_trades": 19,
+      "t3_net_pnl_pct": 2.11352,
+      "events_available": 9,
+      "external_locks": 8,
+      "external_lock_reasons": {
+        "t3_swing": 8
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 70065,
+        "missing_prev_close": 13
+      },
+      "elapsed_seconds": 68.48
+    },
+    {
+      "candidate": "all_speed_abs_ge_0p35",
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": 0.86,
+      "final_balance": 100864.18,
+      "total_trades": 13,
+      "t3_trades": 13,
+      "t3_net_pnl_pct": 1.64745,
+      "events_available": 8,
+      "external_locks": 8,
+      "external_lock_reasons": {
+        "t3_swing": 8
+      },
+      "reentry_fill_rejects": {
+        "no_reclaim_cross": 47998,
+        "missing_prev_close": 9
+      },
+      "elapsed_seconds": 65.99
+    }
+  ]
+}

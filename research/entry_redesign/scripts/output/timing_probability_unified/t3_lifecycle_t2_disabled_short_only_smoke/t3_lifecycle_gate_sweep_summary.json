@@ -1,0 +1,183 @@
+{
+  "note": "Research-only full lifecycle T3 quality gate sweep. Filters apply only to t3_swing breakout locks inside baseline_plus_t3. This is a discovery step, not a live promotion.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "disable_original_t2": true,
+  "t3_exit_overrides": {
+    "min_hold_seconds_before_sl": 3600.0
+  },
+  "calendar_grid": {
+    "months": [
+      "2026-02"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 1
+  },
+  "candidate_specs": [
+    {
+      "label": "pre900",
+      "filters": {
+        "max_pre_touch_seconds": 900.0
+      }
+    },
+    {
+      "label": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "pre900",
+      "filters": {
+        "max_pre_touch_seconds": 900.0
+      },
+      "calendar_silo_sum_pct": 0.28,
+      "calendar_avg_symbol_month_pct": 0.28,
+      "worst_calendar_silo_pct": 0.28,
+      "negative_calendar_silos": 0,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 7,
+      "t2_trades": 0,
+      "t3_trades": 7,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.56072,
+      "t3_rejects": 50,
+      "by_month": {
+        "2026-02": 0.28
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.28
+      }
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "calendar_silo_sum_pct": 0.0,
+      "calendar_avg_symbol_month_pct": 0.0,
+      "worst_calendar_silo_pct": 0.0,
+      "negative_calendar_silos": 0,
+      "traded_symbol_months": 0,
+      "flat_symbol_months": 1,
+      "total_trades": 0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 51,
+      "by_month": {
+        "2026-02": 0.0
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.0
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [
+    {
+      "candidate": "pre900_short_only",
+      "baseline_candidate": "pre900",
+      "calendar_silo_sum_delta_pct": -0.28,
+      "worst_calendar_silo_delta_pct": -0.28,
+      "trade_count_delta": -7,
+      "t3_trade_delta": -7,
+      "t3_net_pnl_delta_pct": -0.56072,
+      "t3_reject_delta": 1,
+      "negative_calendar_silos_delta": 0
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "pre900",
+      "filters": {
+        "max_pre_touch_seconds": 900.0
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.28,
+      "final_balance": 100280.01,
+      "trades": 7,
+      "win_rate_pct": 57.14,
+      "max_dd_pct": -0.09,
+      "t2_trades": 0,
+      "t3_trades": 7,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.56072,
+      "t3_rejects": 50,
+      "t3_reject_reasons": {
+        "long": {
+          "pre_touch_seconds": 28
+        },
+        "short": {
+          "pre_touch_seconds": 22
+        }
+      },
+      "breakout_locks": {
+        "long": {
+          "t3_swing": 13
+        },
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 6,
+        "SL-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 7
+      },
+      "elapsed_seconds": 77.75
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 51,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 29
+        },
+        "short": {
+          "pre_touch_seconds": 22
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 77.35
+    }
+  ]
+}

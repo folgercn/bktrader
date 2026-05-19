@@ -1,0 +1,355 @@
+{
+  "note": "Research-only merge matrix. Metrics with different contracts are intentionally not added together.",
+  "inputs": {
+    "lead_combo_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_context_model_lead_combo_summary.csv",
+    "lead_retrain_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_model_retrain_summary.csv",
+    "t3_exit_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_exit_60m_extended/t3_lifecycle_exit_sweep_summary.json",
+    "t3_baseline_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_strict_baseline_extended/t3_lifecycle_stability_summary.json",
+    "t3_exposure_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_exposure_60m_extended/t3_lifecycle_exposure_audit_summary.json",
+    "t2_lifecycle_context_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_lifecycle_context_sizing_extended/t2_lifecycle_context_sizing_summary.json",
+    "t2_t3_union_lifecycle_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_lifecycle_union_combined/t2_lifecycle_context_sizing_summary.json",
+    "t2_ctx4h_multiplier_sensitivity_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_ctx4h_multiplier_sensitivity_extended/t2_lifecycle_context_sizing_summary.json",
+    "t2_ctx4h_skipfail_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_ctx4h_skipfail_extended/t2_lifecycle_context_sizing_summary.json",
+    "t2_pass_bucket_reference_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_reference_extended/t2_lifecycle_pass_bucket_gate_summary.json",
+    "t2_pass_bucket_pretouch900_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_pretouch900_extended/t2_lifecycle_pass_bucket_gate_summary.json",
+    "t2_pass_bucket_disabled_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_t2_disabled_extended/t2_lifecycle_pass_bucket_gate_summary.json",
+    "t2_external_low_eff_rf_summary": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_external_low_eff_rf_median_extended/t2_lifecycle_external_event_gate_summary.json"
+  },
+  "metric_rows": [
+    {
+      "family": "current_breakout_expansion",
+      "candidate": "low_eff_rf_rank_median_000",
+      "contract": "lead combo event ledger, next_adverse_xslip10bps",
+      "sample": "ETHUSDT 2025-06..2026-04, train3m selected expansion",
+      "primary_metric": "combo_adverse10_calendar_sum",
+      "primary_value": 0.2828712680187206,
+      "delta_vs_baseline": 0.053154791025715,
+      "worst_metric": "combo_adverse10_worst_sm",
+      "worst_value": -0.0047356259666955,
+      "negative_silos": 2,
+      "trades": 89,
+      "promotion_read": "late-ETH additive candidate only; still blocked by early ETH/BTC falsification"
+    },
+    {
+      "family": "current_breakout_expansion",
+      "candidate": "wide_rf_binary_000",
+      "contract": "lead combo event ledger, next_adverse_xslip10bps",
+      "sample": "ETHUSDT 2025-06..2026-04, train3m selected expansion",
+      "primary_metric": "combo_adverse10_calendar_sum",
+      "primary_value": 0.2820912517087393,
+      "delta_vs_baseline": 0.0523747747157337,
+      "worst_metric": "combo_adverse10_worst_sm",
+      "worst_value": -0.0422754539059675,
+      "negative_silos": 2,
+      "trades": 119,
+      "promotion_read": "useful sensitivity row, not the preferred merge leg"
+    },
+    {
+      "family": "current_breakout_expansion",
+      "candidate": "low_eff_rf_rank_q60_000",
+      "contract": "lead combo event ledger, next_adverse_xslip10bps",
+      "sample": "ETHUSDT 2025-06..2026-04, train3m selected expansion",
+      "primary_metric": "combo_adverse10_calendar_sum",
+      "primary_value": 0.2676271636075849,
+      "delta_vs_baseline": 0.0379106866145792,
+      "worst_metric": "combo_adverse10_worst_sm",
+      "worst_value": -0.0047356259666955,
+      "negative_silos": 2,
+      "trades": 82,
+      "promotion_read": "useful sensitivity row, not the preferred merge leg"
+    },
+    {
+      "family": "current_breakout_retrain",
+      "candidate": "canonical_only",
+      "contract": "production8 retrain, forward next_adverse_xslip10bps",
+      "sample": "ETHUSDT forward >= 2025-11, live-like exit trail_start_r=1.5 max_hold_hours=2.0",
+      "primary_metric": "forward_adverse10_calendar_sum",
+      "primary_value": 0.2997156641704245,
+      "delta_vs_baseline": 0.0,
+      "worst_metric": "forward_adverse10_worst_sm",
+      "worst_value": 0.0026883756552808,
+      "negative_silos": 0,
+      "trades": 78,
+      "promotion_read": "reference row for current breakout line"
+    },
+    {
+      "family": "current_breakout_retrain",
+      "candidate": "combo_wf3_low_eff_low_atr",
+      "contract": "production8 retrain, forward next_adverse_xslip10bps",
+      "sample": "ETHUSDT forward >= 2025-11, live-like exit trail_start_r=1.5 max_hold_hours=2.0",
+      "primary_metric": "forward_adverse10_calendar_sum",
+      "primary_value": 0.4085122511702979,
+      "delta_vs_baseline": 0.10879658699987338,
+      "worst_metric": "forward_adverse10_worst_sm",
+      "worst_value": -0.0022438852127743,
+      "negative_silos": 1,
+      "trades": 115,
+      "promotion_read": "reference row for current breakout line"
+    },
+    {
+      "family": "current_breakout_retrain",
+      "candidate": "combo_wf3_low_eff_low_atr_ctx4h_scaled025",
+      "contract": "production8 retrain, forward next_adverse_xslip10bps",
+      "sample": "ETHUSDT forward >= 2025-11, live-like exit trail_start_r=1.5 max_hold_hours=2.0",
+      "primary_metric": "forward_adverse10_calendar_sum",
+      "primary_value": 0.3702663851515037,
+      "delta_vs_baseline": 0.07055072098107917,
+      "worst_metric": "forward_adverse10_worst_sm",
+      "worst_value": 0.0060973051465435,
+      "negative_silos": 0,
+      "trades": 115,
+      "promotion_read": "best current ETH-local sizing-control shape"
+    },
+    {
+      "family": "current_breakout_retrain",
+      "candidate": "combo_wf3_low_eff_low_atr_ctx12h_up",
+      "contract": "production8 retrain, forward next_adverse_xslip10bps",
+      "sample": "ETHUSDT forward >= 2025-11, live-like exit trail_start_r=1.5 max_hold_hours=2.0",
+      "primary_metric": "forward_adverse10_calendar_sum",
+      "primary_value": 0.3717476574317995,
+      "delta_vs_baseline": 0.072031993261375,
+      "worst_metric": "forward_adverse10_worst_sm",
+      "worst_value": 0.0110732042868088,
+      "negative_silos": 0,
+      "trades": 91,
+      "promotion_read": "reference row for current breakout line"
+    },
+    {
+      "family": "t3_strict_lifecycle",
+      "candidate": "strict_baseline",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -30.98,
+      "delta_vs_baseline": 0.0,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -2.19,
+      "negative_silos": 22,
+      "trades": 659,
+      "promotion_read": "strict lifecycle baseline/control; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_strict_baseline_extended/t3_lifecycle_stability_summary.json"
+    },
+    {
+      "family": "t3_strict_lifecycle",
+      "candidate": "t3_min_hold_sl_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -24.48,
+      "delta_vs_baseline": 6.5,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -2.15,
+      "negative_silos": 22,
+      "trades": 610,
+      "promotion_read": "strict T3 watch leg; positive T3 split but total lifecycle still weak; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_exit_60m_extended/t3_lifecycle_exit_sweep_summary.json"
+    },
+    {
+      "family": "t2_strict_lifecycle_context_sizing",
+      "candidate": "original_t2_ctx4h_scaled025",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -18.05,
+      "delta_vs_baseline": 12.93,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -1.29,
+      "negative_silos": 22,
+      "trades": 659,
+      "promotion_read": "strict lifecycle bridge for the current ctx4h scaled-sizing idea; T2 PnL -3.596480%, T3 PnL -1.603750%, size fails 2899; T3 overrides={}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_lifecycle_context_sizing_extended/t2_lifecycle_context_sizing_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_union",
+      "candidate": "original_t2_ctx4h_scaled025_t3_min_hold_sl_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -11.68,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -1.1,
+      "negative_silos": 21,
+      "trades": 610,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -3.513910%, T3 PnL 3.854600%, size fails 2895; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_lifecycle_union_combined/t2_lifecycle_context_sizing_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_multiplier_sensitivity",
+      "candidate": "original_t2_ctx4h_scaled010_t3_min_hold_sl_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -9.13,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.88,
+      "negative_silos": 20,
+      "trades": 610,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -2.720670%, T3 PnL 3.856350%, size fails 2895; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_ctx4h_multiplier_sensitivity_extended/t2_lifecycle_context_sizing_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_multiplier_sensitivity",
+      "candidate": "original_t2_ctx4h_scaled000_t3_min_hold_sl_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -7.41,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.74,
+      "negative_silos": 19,
+      "trades": 255,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -2.191290%, T3 PnL 3.857520%, size fails 2895; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_ctx4h_multiplier_sensitivity_extended/t2_lifecycle_context_sizing_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_skipfail",
+      "candidate": "original_t2_ctx4h_skipfail_t3_min_hold_sl_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -7.9,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.74,
+      "negative_silos": 19,
+      "trades": 267,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -2.383800%, T3 PnL 3.983430%, size fails 2958; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_ctx4h_skipfail_extended/t2_lifecycle_context_sizing_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_pass_bucket_reference",
+      "candidate": "ctx4h_skipfail_t3_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -7.9,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.74,
+      "negative_silos": 19,
+      "trades": 267,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -2.383800%, T3 PnL 3.983430%, size fails 2958; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_reference_extended/t2_lifecycle_pass_bucket_gate_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_pass_bucket_gate",
+      "candidate": "pretouch_max900_skipfail_t3_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -4.96,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.68,
+      "negative_silos": 18,
+      "trades": 207,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL -1.434690%, T3 PnL 3.985080%, size fails 4429; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_pretouch900_extended/t2_lifecycle_pass_bucket_gate_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_t2_disabled_floor",
+      "candidate": "t2_disabled_t3_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, original_t2 sizing filter",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -0.19,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.46,
+      "negative_silos": 12,
+      "trades": 104,
+      "promotion_read": "strict lifecycle union row with T2 ctx4h sizing and T3 exit overrides; T2 PnL 0.000000%, T3 PnL 3.988470%, size fails 3639; T3 overrides={\"min_hold_seconds_before_sl\": 3600.0}; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_pass_bucket_gate_t2_disabled_extended/t2_lifecycle_pass_bucket_gate_summary.json"
+    },
+    {
+      "family": "t2_t3_strict_lifecycle_external_probability",
+      "candidate": "low_eff_rf_rank_median_external_t3_60m",
+      "contract": "baseline_plus_t3 lifecycle, strict_next_second_cross, external probability event locks",
+      "sample": "2025-06..2026-04 x ETHUSDT/BTCUSDT",
+      "primary_metric": "calendar_silo_sum_pct",
+      "primary_value": -0.59,
+      "delta_vs_baseline": null,
+      "worst_metric": "worst_calendar_silo_pct",
+      "worst_value": -0.46,
+      "negative_silos": 12,
+      "trades": 113,
+      "promotion_read": "strict lifecycle bridge for probability-selected external T2 events; external events 28, locks 27, trades 9, external PnL -0.121280%, T3 PnL 3.988540%; source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_external_low_eff_rf_median_extended/t2_lifecycle_external_event_gate_summary.json"
+    }
+  ],
+  "merge_decisions": [
+    {
+      "surface": "T2 canonical + current breakout expansion",
+      "decision": "merge as additive candidate",
+      "reason": "Both are event-ledger/retrain outputs under next_adverse_xslip10bps and already de-overlap by (signal_start, side).",
+      "next_action": "Keep low_eff_rf_rank_median_000 and ctx4h_scaled025 as the current ETH-local falsification set."
+    },
+    {
+      "surface": "T2 canonical + T3 generator/quality/probability harness",
+      "decision": "merge the framework and keep strict lifecycle as the comparison contract",
+      "reason": "T3 structure is mutually exclusive with T2 and uses compatible features; the bridge replay now prevents adding adverse10 ledger returns to lifecycle returns.",
+      "next_action": "Use the strict lifecycle union row as the research comparison surface; keep adverse10 ledgers as diagnostic provenance only."
+    },
+    {
+      "surface": "T3 historical lifecycle positives",
+      "decision": "do not merge",
+      "reason": "Historical reentry_window allowed optimistic same-second/non-cross re_p fills; strict replay invalidated the large T3 contribution.",
+      "next_action": "Treat Task 14-17 historical T3 positive results as suspect-only provenance."
+    },
+    {
+      "surface": "T3 min_hold_sl_60m",
+      "decision": "watch-only merge leg",
+      "reason": "It improves strict T3 split and survives final-mark exclusion, but increases exposure and total strict lifecycle remains negative.",
+      "next_action": "Keep it inside strict lifecycle union tests only; do not promote it to live stop semantics."
+    },
+    {
+      "surface": "T2 ctx4h sizing + T3 min_hold_sl_60m",
+      "decision": "promising bridge result, not promotion-ready",
+      "reason": "The two risk-shaping layers stack under strict_next_second_cross, but the combined fixed-calendar lifecycle remains negative.",
+      "next_action": "Attack residual T2 loss and BTC drag before any live/default discussion."
+    },
+    {
+      "surface": "T2 ctx4h fail multiplier sensitivity",
+      "decision": "zero-fail exposure is the best strict research row; skip-fail is the cleaner executable challenger",
+      "reason": "Reducing failed-context original_t2 exposure improves total lifecycle and worst silo; skip-fail keeps most of the improvement without relying on zero-notional lock occupancy.",
+      "next_action": "Use skip-fail as the cleaner next implementation surface, while retaining scaled000 as the upper-bound research control."
+    },
+    {
+      "surface": "T2 pass/full bucket",
+      "decision": "reject current original_t2 pass bucket as a trading leg",
+      "reason": "Strict lifecycle attribution shows all simple pass buckets remain fee-negative; disabling original_t2 beats ctx4h skip-fail and pre_touch<=900.",
+      "next_action": "Do not spend more sweeps on ctx4h/pass timing knobs; either disable original_t2 or implement an exact event-time probability/RF lifecycle hook."
+    },
+    {
+      "surface": "low_eff/RF external event hook",
+      "decision": "reject as-is under strict lifecycle",
+      "reason": "The RF-selected event set can be injected as explicit locks, but only a minority become strict reentry trades and the external leg is still net negative.",
+      "next_action": "Use RF only with a post-touch entry/confirmation redesign; do not treat the adverse10 event-ledger result as lifecycle-ready."
+    }
+  ],
+  "contract_readiness": [
+    {
+      "candidate": "low_eff_rf_rank_median_000_combo",
+      "current_contract": "T2 next_adverse_xslip10bps event ledger",
+      "strict_lifecycle_ready": false,
+      "blocker": "No executable lifecycle breakout-lock rule yet; current row is additive ledger selection.",
+      "next_action": "Translate the selected low-eff/RF leg into a replay-time original_t2 quality gate or keep it ledger-only."
+    },
+    {
+      "candidate": "wf3_low_eff_low_atr_ctx4h_scaled025_combo",
+      "current_contract": "T2 next_adverse_xslip10bps event ledger with derived scaled sizing",
+      "strict_lifecycle_ready": true,
+      "blocker": "Bridge hook has a full fixed-calendar lifecycle result for the original_t2 ctx4h scaled-sizing approximation; exact event-ledger parity is still pending.",
+      "next_action": "Use the lifecycle bridge result to decide whether ctx4h sizing deserves exact parity work or should be rejected."
+    },
+    {
+      "candidate": "strict_baseline",
+      "current_contract": "baseline_plus_t3 strict_next_second_cross lifecycle",
+      "strict_lifecycle_ready": true,
+      "blocker": "None for T3 baseline; it is already the strict lifecycle control.",
+      "next_action": "Use as lifecycle control, not as a profitability benchmark for adverse10 T2 ledgers."
+    },
+    {
+      "candidate": "t3_min_hold_sl_60m",
+      "current_contract": "baseline_plus_t3 strict_next_second_cross lifecycle with T3-only exit override",
+      "strict_lifecycle_ready": true,
+      "blocker": "Watch-only because total lifecycle remains negative and exposure risk must stay visible.",
+      "next_action": "Only compare against T2 once T2 expansion is replayed through the same lifecycle contract."
+    }
+  ],
+  "t3_exposure_notes": [
+    "t3_min_hold_sl_60m: T3 PnL 3.845829%, ex-final-mark 3.655098%, FinalMark 0.190731%/1, T3 DD -0.254383%, p90 hold 6245.20s, worst MAE -477.5244bp (source=/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t2_t3_merge_t3_exposure_60m_extended/t3_lifecycle_exposure_audit_summary.json)"
+  ]
+}

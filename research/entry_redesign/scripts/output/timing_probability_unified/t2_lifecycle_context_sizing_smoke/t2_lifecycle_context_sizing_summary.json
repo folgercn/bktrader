@@ -1,0 +1,176 @@
+{
+  "note": "Research-only lifecycle bridge for original_t2 context sizing. Sizing filters scale original_t2 reentry-window orders; they do not reject breakout locks.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "calendar_grid": {
+    "months": [
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 1
+  },
+  "candidate_specs": [
+    {
+      "label": "strict_baseline",
+      "shape_sizing_filters": {},
+      "fail_multiplier": 1.0
+    },
+    {
+      "label": "original_t2_ctx4h_scaled025",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.25
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "strict_baseline",
+      "shape_sizing_filters": {},
+      "fail_multiplier": 1.0,
+      "calendar_silo_sum_pct": -1.02,
+      "calendar_avg_symbol_month_pct": -1.02,
+      "worst_calendar_silo_pct": -1.02,
+      "negative_calendar_silos": 1,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 24,
+      "t2_trades": 20,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.25595,
+      "t3_net_pnl_pct": -0.05206,
+      "t2_size_filter_fails": 0,
+      "t2_size_filter_reasons": {},
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 183522,
+        "no_reclaim_cross": 632614,
+        "missing_prev_close": 76
+      },
+      "by_month": {
+        "2026-04": -1.02
+      },
+      "by_symbol": {
+        "ETHUSDT": -1.02
+      }
+    },
+    {
+      "candidate": "original_t2_ctx4h_scaled025",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.25,
+      "calendar_silo_sum_pct": -0.57,
+      "calendar_avg_symbol_month_pct": -0.57,
+      "worst_calendar_silo_pct": -0.57,
+      "negative_calendar_silos": 1,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 24,
+      "t2_trades": 20,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.1104,
+      "t3_net_pnl_pct": -0.05214,
+      "t2_size_filter_fails": 128,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 94,
+        "ctx_side_return_atr": 34
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 183522,
+        "no_reclaim_cross": 632614,
+        "missing_prev_close": 76
+      },
+      "by_month": {
+        "2026-04": -0.57
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.57
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [
+    {
+      "candidate": "original_t2_ctx4h_scaled025",
+      "baseline_candidate": "strict_baseline",
+      "calendar_silo_sum_delta_pct": 0.45,
+      "worst_calendar_silo_delta_pct": 0.45,
+      "trade_count_delta": 0,
+      "t2_trade_delta": 0,
+      "t2_net_pnl_delta_pct": 0.14555,
+      "negative_calendar_silos_delta": 0
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "strict_baseline",
+      "shape_sizing_filters": {},
+      "fail_multiplier": 1.0,
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -1.02,
+      "final_balance": 98975.58,
+      "total_trades": 24,
+      "t2_trades": 20,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.25595,
+      "t3_net_pnl_pct": -0.05206,
+      "t2_size_filter_fails": 0,
+      "t2_size_filter_reasons": {},
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 83914,
+          "no_reclaim_cross": 311325,
+          "missing_prev_close": 39
+        },
+        "short": {
+          "same_second_zero_initial": 99608,
+          "no_reclaim_cross": 321289,
+          "missing_prev_close": 37
+        }
+      },
+      "elapsed_seconds": 79.95
+    },
+    {
+      "candidate": "original_t2_ctx4h_scaled025",
+      "shape_sizing_filters": {
+        "max_atr_percentile": 40.0,
+        "min_ctx_side_return_atr": 0.0,
+        "ctx_return_lookback_bars": 4
+      },
+      "fail_multiplier": 0.25,
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.57,
+      "final_balance": 99433.55,
+      "total_trades": 24,
+      "t2_trades": 20,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": -0.1104,
+      "t3_net_pnl_pct": -0.05214,
+      "t2_size_filter_fails": 128,
+      "t2_size_filter_reasons": {
+        "atr_percentile_high": 94,
+        "ctx_side_return_atr": 34
+      },
+      "reentry_fill_rejects": {
+        "long": {
+          "same_second_zero_initial": 83914,
+          "no_reclaim_cross": 311325,
+          "missing_prev_close": 39
+        },
+        "short": {
+          "same_second_zero_initial": 99608,
+          "no_reclaim_cross": 321289,
+          "missing_prev_close": 37
+        }
+      },
+      "elapsed_seconds": 81.29
+    }
+  ]
+}

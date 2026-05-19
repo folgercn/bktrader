@@ -1,0 +1,166 @@
+{
+  "note": "Research-only audit. Scores frozen data/pretouch_model.json on T3 events and joins them to strict T2-disabled + T3 60m lifecycle trades. Gate metrics are trade-level attribution, not yet a rerun lifecycle gate.",
+  "model_path": "/Users/wuyaocheng/Downloads/bkTrader/data/pretouch_model.json",
+  "months": [
+    "2026-02"
+  ],
+  "symbols": [
+    "ETHUSDT"
+  ],
+  "trades": 7,
+  "matched_trades": 7,
+  "events": 213,
+  "elapsed_seconds": 83.26,
+  "top_gates": [
+    {
+      "gate": "ext_abs_le_0p05",
+      "trades": 5,
+      "avg_trade_net_pct": 0.066716,
+      "win_rate_pct": 60.0,
+      "net_after_fee_pct": 0.333578,
+      "worst_symbol_month_pct": 0.333578,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.333578
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.333578
+      }
+    },
+    {
+      "gate": "all_t3",
+      "trades": 7,
+      "avg_trade_net_pct": 0.040001,
+      "win_rate_pct": 57.14,
+      "net_after_fee_pct": 0.280005,
+      "worst_symbol_month_pct": 0.280005,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.280005
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.280005
+      }
+    },
+    {
+      "gate": "matched_model_events",
+      "trades": 7,
+      "avg_trade_net_pct": 0.040001,
+      "win_rate_pct": 57.14,
+      "net_after_fee_pct": 0.280005,
+      "worst_symbol_month_pct": 0.280005,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.280005
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.280005
+      }
+    },
+    {
+      "gate": "side_long",
+      "trades": 7,
+      "avg_trade_net_pct": 0.040001,
+      "win_rate_pct": 57.14,
+      "net_after_fee_pct": 0.280005,
+      "worst_symbol_month_pct": 0.280005,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.280005
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.280005
+      }
+    },
+    {
+      "gate": "ext_abs_le_0p10",
+      "trades": 6,
+      "avg_trade_net_pct": 0.045217,
+      "win_rate_pct": 50.0,
+      "net_after_fee_pct": 0.271303,
+      "worst_symbol_month_pct": 0.271303,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.271303
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.271303
+      }
+    },
+    {
+      "gate": "model_live_quality",
+      "trades": 6,
+      "avg_trade_net_pct": 0.039481,
+      "win_rate_pct": 50.0,
+      "net_after_fee_pct": 0.236888,
+      "worst_symbol_month_pct": 0.236888,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.236888
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.236888
+      }
+    },
+    {
+      "gate": "rf_ge_0p55",
+      "trades": 5,
+      "avg_trade_net_pct": 0.001781,
+      "win_rate_pct": 60.0,
+      "net_after_fee_pct": 0.008904,
+      "worst_symbol_month_pct": 0.008904,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.008904
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.008904
+      }
+    },
+    {
+      "gate": "rf_ge_0p60",
+      "trades": 5,
+      "avg_trade_net_pct": 0.001781,
+      "win_rate_pct": 60.0,
+      "net_after_fee_pct": 0.008904,
+      "worst_symbol_month_pct": 0.008904,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.008904
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.008904
+      }
+    },
+    {
+      "gate": "side_short",
+      "trades": 0,
+      "avg_trade_net_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "net_after_fee_pct": 0.0,
+      "worst_symbol_month_pct": 0.0,
+      "negative_symbol_months": 0,
+      "by_month": {
+        "2026-02": 0.0
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.0
+      }
+    },
+    {
+      "gate": "rf_ge_0p65",
+      "trades": 2,
+      "avg_trade_net_pct": -0.006298,
+      "win_rate_pct": 50.0,
+      "net_after_fee_pct": -0.012596,
+      "worst_symbol_month_pct": -0.012596,
+      "negative_symbol_months": 1,
+      "by_month": {
+        "2026-02": -0.012596
+      },
+      "by_symbol": {
+        "ETHUSDT": -0.012596
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "note": "Research-only strict lifecycle replay for probability-selected external T2 events. Native original_t2 is disabled; external RF events are injected as explicit breakout locks.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "external_entry_mode": "next_second_open",
+  "calendar_grid": {
+    "months": [
+      "2026-02"
+    ],
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "symbol_months": 1
+  },
+  "candidate_specs": [
+    {
+      "label": "low_eff_rf_rank_median_external_touch_close_ext_ge_0p03atr_next_second_open_t3_60m",
+      "external_shape_name": "low_eff_rf_rank_median_000",
+      "external_events_path": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_context_model_lead_combo_active_events_low_eff_rf_rank_median_000.csv",
+      "confirmation_events_path": "research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_confirmation_events_touch_close_ext_ge_0p03atr.csv",
+      "external_entry_mode": "next_second_open",
+      "read": "Inject low_eff_rf_rank_median_000 active events as explicit breakout locks; native original_t2 remains disabled; event source=touch_close_ext_ge_0p03atr; external entry mode=next_second_open."
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "low_eff_rf_rank_median_external_touch_close_ext_ge_0p03atr_next_second_open_t3_60m",
+      "calendar_silo_sum_pct": 0.16,
+      "calendar_avg_symbol_month_pct": 0.16,
+      "worst_calendar_silo_pct": 0.16,
+      "negative_calendar_silos": 0,
+      "traded_symbol_months": 1,
+      "flat_symbol_months": 0,
+      "total_trades": 9,
+      "t3_trades": 7,
+      "external_trades": 2,
+      "t3_net_pnl_pct": 0.56026,
+      "external_net_pnl_pct": -0.04076,
+      "external_events_available": 2,
+      "external_locks": 2,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5730,
+        "no_reclaim_cross": 132897,
+        "missing_prev_close": 23
+      },
+      "by_month": {
+        "2026-02": 0.16
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.16
+      }
+    }
+  ],
+  "silos": [
+    {
+      "candidate": "low_eff_rf_rank_median_external_touch_close_ext_ge_0p03atr_next_second_open_t3_60m",
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.16,
+      "final_balance": 100159.0,
+      "total_trades": 9,
+      "t3_trades": 7,
+      "external_trades": 2,
+      "t3_net_pnl_pct": 0.56026,
+      "external_net_pnl_pct": -0.04076,
+      "external_events_available": 2,
+      "external_locks": 2,
+      "external_lock_reasons": {
+        "low_eff_rf_rank_median_000": 2
+      },
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 5730,
+        "no_reclaim_cross": 132897,
+        "missing_prev_close": 23
+      },
+      "elapsed_seconds": 59.7
+    }
+  ]
+}

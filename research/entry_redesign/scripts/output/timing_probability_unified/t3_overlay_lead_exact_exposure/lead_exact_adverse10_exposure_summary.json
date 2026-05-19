@@ -1,0 +1,45 @@
+{
+  "note": "Research-only exact lead exposure ledger. Windows use selected DelayResult entry/exit times and preserve adverse10 compact-ledger PnL parity.",
+  "output_windows": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_lead_exact_exposure/lead_exact_adverse10_exposure_windows.csv",
+  "reference_adverse_trades": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_combo_lead_adverse10_trades.csv",
+  "metrics": {
+    "calendar_sum_pct": 22.971648,
+    "worst_month_pct": 1.395821,
+    "negative_months": 0,
+    "trade_count": 62
+  },
+  "parity": {
+    "reference_rows": 62,
+    "exact_rows": 62,
+    "missing_exact_events": 0,
+    "extra_exact_events": 0,
+    "selected_delay_mismatches": 0,
+    "max_abs_weighted_pnl_diff": 0.0,
+    "max_abs_position_size_diff": 0.0,
+    "max_abs_delay_pnl_diff": 0.0
+  },
+  "diagnostics": {
+    "symbol": "ETHUSDT",
+    "scenario": "next_adverse_xslip10bps",
+    "lead_replayed_events": 68,
+    "lead_delay_errors": 0,
+    "lead_exec_params": {
+      "initial_stop_atr": 0.45,
+      "stop_buffer_atr": 0.05,
+      "stop_cap_atr": 0.8,
+      "min_stop_bps": 12.0,
+      "breakeven_at_r": 0.8,
+      "cost_lock_bps": 10.0,
+      "trail_start_r": 1.5,
+      "trail_buffer_atr": 0.05,
+      "max_hold_hours": 2.0,
+      "slippage": 0.0002,
+      "entry_fee": 0.0002,
+      "exit_fee": 0.0004
+    },
+    "exact_rows_all": 68,
+    "exact_rows_gate_on": 62,
+    "missing_entry_times_gate_on": 0,
+    "missing_exit_times_gate_on": 0
+  }
+}

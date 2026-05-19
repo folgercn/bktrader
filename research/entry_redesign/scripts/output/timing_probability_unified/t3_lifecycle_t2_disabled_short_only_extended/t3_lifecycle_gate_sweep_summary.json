@@ -1,0 +1,985 @@
+{
+  "note": "Research-only full lifecycle T3 quality gate sweep. Filters apply only to t3_swing breakout locks inside baseline_plus_t3. This is a discovery step, not a live promotion.",
+  "timeframe": "1h",
+  "reentry_fill_policy": "strict_next_second_cross",
+  "disable_original_t2": true,
+  "t3_exit_overrides": {
+    "min_hold_seconds_before_sl": 3600.0
+  },
+  "calendar_grid": {
+    "months": [
+      "2025-06",
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04"
+    ],
+    "symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "symbol_months": 22
+  },
+  "candidate_specs": [
+    {
+      "label": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "calendar_silo_sum_pct": 0.46,
+      "calendar_avg_symbol_month_pct": 0.020909,
+      "worst_calendar_silo_pct": -0.09,
+      "negative_calendar_silos": 9,
+      "traded_symbol_months": 16,
+      "flat_symbol_months": 6,
+      "total_trades": 33,
+      "t2_trades": 0,
+      "t3_trades": 33,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 1.77243,
+      "t3_rejects": 1028,
+      "by_month": {
+        "2025-06": -0.14,
+        "2025-07": 0.04,
+        "2025-08": 0.07,
+        "2025-09": 0.0,
+        "2025-10": -0.06,
+        "2025-11": 0.1,
+        "2025-12": -0.14,
+        "2026-01": -0.05,
+        "2026-02": 0.0,
+        "2026-03": 0.7,
+        "2026-04": -0.06
+      },
+      "by_symbol": {
+        "ETHUSDT": 0.54,
+        "BTCUSDT": -0.08
+      }
+    }
+  ],
+  "deltas_vs_first_candidate": [],
+  "silos": [
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-06",
+      "return_pct": -0.05,
+      "final_balance": 99945.91,
+      "trades": 2,
+      "win_rate_pct": 50.0,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.02591,
+      "t3_rejects": 49,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 27
+        },
+        "short": {
+          "pre_touch_seconds": 22
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 8
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 2
+      },
+      "elapsed_seconds": 83.71
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-07",
+      "return_pct": 0.06,
+      "final_balance": 100062.7,
+      "trades": 3,
+      "win_rate_pct": 33.33,
+      "max_dd_pct": -0.1,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.18281,
+      "t3_rejects": 54,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 35
+        },
+        "short": {
+          "pre_touch_seconds": 19
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 3
+      },
+      "exit_reasons": {
+        "SL": 3
+      },
+      "elapsed_seconds": 86.06
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-08",
+      "return_pct": 0.07,
+      "final_balance": 100071.91,
+      "trades": 2,
+      "win_rate_pct": 50.0,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.15188,
+      "t3_rejects": 49,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 23
+        },
+        "short": {
+          "pre_touch_seconds": 26
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 12
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 2
+      },
+      "elapsed_seconds": 85.14
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-09",
+      "return_pct": 0.03,
+      "final_balance": 100027.8,
+      "trades": 3,
+      "win_rate_pct": 66.67,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.14776,
+      "t3_rejects": 43,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 19
+        },
+        "short": {
+          "pre_touch_seconds": 24
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 9
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 3
+      },
+      "exit_reasons": {
+        "SL": 3
+      },
+      "elapsed_seconds": 82.91
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-10",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 39,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 21
+        },
+        "short": {
+          "pre_touch_seconds": 18
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 5
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 85.14
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-11",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 32,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 13
+        },
+        "short": {
+          "pre_touch_seconds": 19
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 10
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 83.79
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2025-12",
+      "return_pct": -0.06,
+      "final_balance": 99944.12,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.04,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.01588,
+      "t3_rejects": 58,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 33
+        },
+        "short": {
+          "pre_touch_seconds": 25
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 8
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 87.04
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-01",
+      "return_pct": -0.06,
+      "final_balance": 99943.89,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.04,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.01611,
+      "t3_rejects": 60,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 37
+        },
+        "short": {
+          "pre_touch_seconds": 23
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 9
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 86.41
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-02",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 51,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 29
+        },
+        "short": {
+          "pre_touch_seconds": 22
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 78.42
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-03",
+      "return_pct": 0.61,
+      "final_balance": 100605.2,
+      "trades": 4,
+      "win_rate_pct": 75.0,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 4,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.76563,
+      "t3_rejects": 60,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 30
+        },
+        "short": {
+          "pre_touch_seconds": 30
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 14
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 4
+      },
+      "exit_reasons": {
+        "SL": 4
+      },
+      "elapsed_seconds": 84.96
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "ETHUSDT",
+      "month": "2026-04",
+      "return_pct": -0.06,
+      "final_balance": 99942.12,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.04,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.01788,
+      "t3_rejects": 46,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 22
+        },
+        "short": {
+          "pre_touch_seconds": 24
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 10
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 81.58
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-06",
+      "return_pct": -0.09,
+      "final_balance": 99909.87,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.07,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.05013,
+      "t3_rejects": 46,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 23
+        },
+        "short": {
+          "pre_touch_seconds": 23
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 81.65
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-07",
+      "return_pct": -0.02,
+      "final_balance": 99982.26,
+      "trades": 2,
+      "win_rate_pct": 50.0,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.06227,
+      "t3_rejects": 38,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 20
+        },
+        "short": {
+          "pre_touch_seconds": 18
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 6
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 2
+      },
+      "elapsed_seconds": 85.36
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-08",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 38,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 20
+        },
+        "short": {
+          "pre_touch_seconds": 18
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 9
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 87.76
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-09",
+      "return_pct": -0.03,
+      "final_balance": 99967.46,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.01,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.00746,
+      "t3_rejects": 46,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 25
+        },
+        "short": {
+          "pre_touch_seconds": 21
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 86.9
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-10",
+      "return_pct": -0.06,
+      "final_balance": 99937.3,
+      "trades": 2,
+      "win_rate_pct": 50.0,
+      "max_dd_pct": -0.08,
+      "t2_trades": 0,
+      "t3_trades": 2,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.01727,
+      "t3_rejects": 43,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 20
+        },
+        "short": {
+          "pre_touch_seconds": 23
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 8
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 2
+      },
+      "elapsed_seconds": 88.06
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-11",
+      "return_pct": 0.1,
+      "final_balance": 100098.09,
+      "trades": 3,
+      "win_rate_pct": 66.67,
+      "max_dd_pct": -0.13,
+      "t2_trades": 0,
+      "t3_trades": 3,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.21802,
+      "t3_rejects": 37,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 16
+        },
+        "short": {
+          "pre_touch_seconds": 21
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 14
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 3
+      },
+      "exit_reasons": {
+        "SL": 2,
+        "FinalMarkToMarket": 1
+      },
+      "elapsed_seconds": 83.71
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2025-12",
+      "return_pct": -0.08,
+      "final_balance": 99918.54,
+      "trades": 1,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": -0.06,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": -0.04146,
+      "t3_rejects": 52,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 27
+        },
+        "short": {
+          "pre_touch_seconds": 25
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 7
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 85.36
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2026-01",
+      "return_pct": 0.01,
+      "final_balance": 100007.13,
+      "trades": 1,
+      "win_rate_pct": 100.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 1,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.04713,
+      "t3_rejects": 43,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 18
+        },
+        "short": {
+          "pre_touch_seconds": 25
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 13
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 1
+      },
+      "elapsed_seconds": 86.15
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2026-02",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 35,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 17
+        },
+        "short": {
+          "pre_touch_seconds": 18
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 5
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 77.54
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2026-03",
+      "return_pct": 0.09,
+      "final_balance": 100087.83,
+      "trades": 5,
+      "win_rate_pct": 80.0,
+      "max_dd_pct": -0.12,
+      "t2_trades": 0,
+      "t3_trades": 5,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.28775,
+      "t3_rejects": 56,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 28
+        },
+        "short": {
+          "pre_touch_seconds": 28
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 10
+        }
+      },
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 4,
+        "SL-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 5
+      },
+      "elapsed_seconds": 85.6
+    },
+    {
+      "candidate": "pre900_short_only",
+      "filters": {
+        "max_pre_touch_seconds": 900.0,
+        "allowed_sides": [
+          "short"
+        ]
+      },
+      "symbol": "BTCUSDT",
+      "month": "2026-04",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "trades": 0,
+      "win_rate_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "t2_trades": 0,
+      "t3_trades": 0,
+      "t2_net_pnl_pct": 0.0,
+      "t3_net_pnl_pct": 0.0,
+      "t3_rejects": 53,
+      "t3_reject_reasons": {
+        "long": {
+          "side": 27
+        },
+        "short": {
+          "pre_touch_seconds": 26
+        }
+      },
+      "breakout_locks": {
+        "long": {},
+        "short": {
+          "t3_swing": 6
+        }
+      },
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "elapsed_seconds": 81.37
+    }
+  ]
+}

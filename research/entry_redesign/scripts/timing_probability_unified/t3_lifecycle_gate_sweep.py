@@ -243,6 +243,8 @@ def run_gate_silo(
     timeframe: str,
     initial_balance: float,
     reentry_fill_policy: str = "strict_next_second_cross",
+    disable_original_t2: bool = False,
+    t3_exit_overrides: dict | None = None,
 ) -> LifecycleGateSiloResult:
     """Run one symbol-month lifecycle silo for a generic T3 gate."""
     start, end = _month_bounds(month)
@@ -261,6 +263,11 @@ def run_gate_silo(
             t3_cooldown_bars=0,
             t3_quality_filters=dict(spec.filters),
             quality_filter_shapes=["t3_swing"],
+            shape_sizing_filters={"allowed_sides": []} if disable_original_t2 else None,
+            sizing_filter_shapes=["original_t2"] if disable_original_t2 else None,
+            sizing_filter_fail_multiplier=0.0 if disable_original_t2 else 1.0,
+            sizing_filter_fail_action="skip_lock" if disable_original_t2 else "scale",
+            t3_exit_overrides=dict(t3_exit_overrides or {}),
             reentry_fill_policy=reentry_fill_policy,
         )
 
@@ -390,6 +397,8 @@ def run_gate_sweep(
     timeframe: str,
     initial_balance: float,
     reentry_fill_policy: str = "strict_next_second_cross",
+    disable_original_t2: bool = False,
+    t3_exit_overrides: dict | None = None,
 ) -> tuple[list[LifecycleGateSiloResult], list[LifecycleGateMetrics]]:
     all_silos: list[LifecycleGateSiloResult] = []
     metrics: list[LifecycleGateMetrics] = []
@@ -406,6 +415,8 @@ def run_gate_sweep(
                     timeframe=timeframe,
                     initial_balance=initial_balance,
                     reentry_fill_policy=reentry_fill_policy,
+                    disable_original_t2=disable_original_t2,
+                    t3_exit_overrides=t3_exit_overrides,
                 )
                 candidate_silos.append(row)
                 all_silos.append(row)
@@ -424,17 +435,21 @@ def write_outputs(
     symbols: list[str],
     timeframe: str,
     reentry_fill_policy: str,
+    disable_original_t2: bool,
+    t3_exit_overrides: dict,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     deltas = compute_gate_deltas(metrics)
     payload = {
         "note": (
             "Research-only full lifecycle T3 quality gate sweep. Filters apply "
-            "only to t3_swing breakout locks inside baseline_plus_t3; original_t2 "
-            "is unchanged. This is a discovery step, not a live promotion."
+            "only to t3_swing breakout locks inside baseline_plus_t3. This is a "
+            "discovery step, not a live promotion."
         ),
         "timeframe": timeframe,
         "reentry_fill_policy": reentry_fill_policy,
+        "disable_original_t2": disable_original_t2,
+        "t3_exit_overrides": t3_exit_overrides,
         "calendar_grid": {
             "months": months,
             "symbols": symbols,
@@ -466,6 +481,8 @@ def write_outputs(
         "",
         f"- Timeframe: `{timeframe}`",
         f"- Reentry fill policy: `{reentry_fill_policy}`",
+        f"- Disable original_t2: `{disable_original_t2}`",
+        f"- T3 exit overrides: `{json.dumps(t3_exit_overrides, sort_keys=True)}`",
         f"- Months: {', '.join(months)}",
         f"- Symbols: {', '.join(symbols)}",
         "",
@@ -540,6 +557,8 @@ def main() -> None:
     parser.add_argument("--symbols", nargs="+", default=DEFAULT_SYMBOLS)
     parser.add_argument("--timeframe", default="1h")
     parser.add_argument("--initial-balance", type=float, default=INITIAL_BALANCE)
+    parser.add_argument("--disable-original-t2", action="store_true")
+    parser.add_argument("--t3-min-hold-sl-seconds", type=float, default=None)
     parser.add_argument(
         "--reentry-fill-policy",
         choices=["historical", "strict_next_second_cross"],
@@ -553,6 +572,9 @@ def main() -> None:
     )
 
     specs = filter_gate_specs(build_gate_specs(str(args.candidate_set)), args.labels)
+    t3_exit_overrides = {}
+    if args.t3_min_hold_sl_seconds is not None:
+        t3_exit_overrides["min_hold_seconds_before_sl"] = float(args.t3_min_hold_sl_seconds)
     silos, metrics = run_gate_sweep(
         specs=specs,
         months=[str(value) for value in args.months],
@@ -560,6 +582,8 @@ def main() -> None:
         timeframe=str(args.timeframe),
         initial_balance=float(args.initial_balance),
         reentry_fill_policy=str(args.reentry_fill_policy),
+        disable_original_t2=bool(args.disable_original_t2),
+        t3_exit_overrides=t3_exit_overrides,
     )
     output_dir = Path(args.output_dir)
     write_outputs(
@@ -571,6 +595,8 @@ def main() -> None:
         symbols=[str(value) for value in args.symbols],
         timeframe=str(args.timeframe),
         reentry_fill_policy=str(args.reentry_fill_policy),
+        disable_original_t2=bool(args.disable_original_t2),
+        t3_exit_overrides=t3_exit_overrides,
     )
 
     best = max(metrics, key=lambda row: row.calendar_silo_sum_pct)
