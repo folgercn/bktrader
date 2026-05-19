@@ -5592,22 +5592,29 @@ func applyLiveSafeStopDefaults(parameters map[string]any) map[string]any {
 		normalized = map[string]any{}
 	}
 
+	v4TrailingConfigured := parseFloatValue(normalized["trail_start_r"]) > 0 && parseFloatValue(normalized["trail_buffer_atr"]) > 0
 	trailingStopATR, trailingConfigured := normalized["trailing_stop_atr"]
 	resolvedTrailingStopATR := parseFloatValue(trailingStopATR)
-	if !trailingConfigured || resolvedTrailingStopATR <= 0 {
-		resolvedTrailingStopATR = liveDefaultTrailingStopATR
-		normalized["trailing_stop_atr"] = resolvedTrailingStopATR
-	}
+	if !v4TrailingConfigured {
+		if !trailingConfigured || resolvedTrailingStopATR <= 0 {
+			resolvedTrailingStopATR = liveDefaultTrailingStopATR
+			normalized["trailing_stop_atr"] = resolvedTrailingStopATR
+		}
 
-	delayedActivationATR, delayedConfigured := normalized["delayed_trailing_activation_atr"]
-	resolvedDelayedActivationATR := parseFloatValue(delayedActivationATR)
-	if !delayedConfigured || resolvedDelayedActivationATR <= 0 {
-		normalized["delayed_trailing_activation_atr"] = liveDefaultDelayedTrailingActivation
+		delayedActivationATR, delayedConfigured := normalized["delayed_trailing_activation_atr"]
+		resolvedDelayedActivationATR := parseFloatValue(delayedActivationATR)
+		if !delayedConfigured || resolvedDelayedActivationATR <= 0 {
+			normalized["delayed_trailing_activation_atr"] = liveDefaultDelayedTrailingActivation
+		}
 	}
 
 	stopLossATR, stopConfigured := normalized["stop_loss_atr"]
 	if !stopConfigured || parseFloatValue(stopLossATR) <= 0 {
-		normalized["stop_loss_atr"] = resolvedTrailingStopATR
+		if initialStopATR := parseFloatValue(normalized["initial_stop_atr"]); initialStopATR > 0 {
+			normalized["stop_loss_atr"] = initialStopATR
+		} else {
+			normalized["stop_loss_atr"] = firstPositive(resolvedTrailingStopATR, liveDefaultTrailingStopATR)
+		}
 	}
 
 	return normalized

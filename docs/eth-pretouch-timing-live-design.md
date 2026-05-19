@@ -403,11 +403,16 @@ go run ./cmd/pretouch-train \
 - 初始止损：live 继续使用 `stop_loss_atr`；当参数只提供 research 命名的 `initial_stop_atr`
   时，归一化会把它作为 `stop_loss_atr` fallback。
 - Breakeven：当浮盈达到 `breakeven_at_r × initial risk` 后，SL 会推进到 entry 加/减
-  `cost_lock_bps`，用于锁住成本。
+  `cost_lock_bps`，用于锁住成本。该判断使用 HWM/LWM 计算 MFE R 倍数，所以属于不可逆
+  ratchet：一旦触发，不会因为价格回撤而撤销。
 - Trailing：当同时提供 `trail_start_r` 和 `trail_buffer_atr` 时，live 使用 research 的 R-multiple
   语义，即浮盈达到 `trail_start_r × initial risk` 才启用 trailing，止损价为 HWM/LWM 回撤
   `trail_buffer_atr × ATR`。这会优先于 legacy `trailing_stop_atr + delayed_trailing_activation_atr`
-  的 ATR-only 语义；没有 V4 参数时 legacy 行为保持不变。
+  的 ATR-only 语义；没有 V4 参数时 legacy 行为保持不变。V4 exit contract 存在时，live safe
+  defaults 不再注入 legacy trailing 默认值，避免 dashboard/审计展示与实际生效参数不一致。
+- `min_stop_bps`、`stop_buffer_atr`、`stop_cap_atr` 当前只在参数归一化中保留，尚未进入 live
+  adaptive initial-stop 计算；这属于分阶段实施，后续若接入需要单独补 entry signal high/low 与 stop cap
+  parity 测试。
 - `max_hold_hours` 当前在模板、参数归一化和 research artifact 中保留，但 live runtime 暂未新增
   定时强平路径；如果要把 max-hold 也接入实盘，需要单独 PR 处理 entry time 来源、重启恢复和
   reduce-only MARKET exit 审计。

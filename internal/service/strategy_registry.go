@@ -1625,6 +1625,8 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	if riskDistance > 0 {
 		riskMultiple = favorableMove / riskDistance
 	}
+	// Breakeven and V4 trailing are based on monotonic HWM/LWM excursion.
+	// Once armed, the stop ratchets forward and never backs off on pullbacks.
 	stopImproves := func(candidate float64) bool {
 		if candidate <= 0 {
 			return false

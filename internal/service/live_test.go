@@ -1771,6 +1771,23 @@ func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *te
 	}
 }
 
+func TestApplyLiveSafeStopDefaultsSkipsLegacyTrailingDefaultsForV4ExitContract(t *testing.T) {
+	parameters := applyLiveSafeStopDefaults(map[string]any{
+		"initial_stop_atr": 0.45,
+		"trail_start_r":    1.5,
+		"trail_buffer_atr": 0.05,
+	})
+	if _, ok := parameters["trailing_stop_atr"]; ok {
+		t.Fatalf("expected V4 trail contract to skip legacy trailing_stop_atr default, got %#v", parameters["trailing_stop_atr"])
+	}
+	if _, ok := parameters["delayed_trailing_activation_atr"]; ok {
+		t.Fatalf("expected V4 trail contract to skip legacy delayed activation default, got %#v", parameters["delayed_trailing_activation_atr"])
+	}
+	if got := parseFloatValue(parameters["stop_loss_atr"]); got != 0.45 {
+		t.Fatalf("expected stop_loss_atr to inherit initial_stop_atr=0.45, got %v", got)
+	}
+}
+
 func TestResolveLiveSessionParametersPropagatesExecutionProfileOverrides(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-1d", map[string]any{
