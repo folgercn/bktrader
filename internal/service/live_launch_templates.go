@@ -329,6 +329,20 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchBaseShare":         0.80,
 		"pretouchCostQ50Threshold":  0.116865,
 		"pretouchCostQ50Penalty":    0.50,
+		// Testnet shadow risk-on sizing. The strategy still requires live sandbox REST
+		// context plus depth/spread guards before using 1.5x lead or T3 overlay quantity.
+		"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+		"pretouchShadowCandidateID":             defaultPretouchShadowCandidateID,
+		"pretouchShadowLeadScale":               defaultPretouchShadowLeadScale,
+		"pretouchShadowOverlayScale":            defaultPretouchShadowOverlayScale,
+		"pretouchShadowOverlayBaseShare":        defaultPretouchShadowOverlayBaseShare,
+		"pretouchShadowOverlaySpeedThreshold":   defaultPretouchShadowOverlaySpeedMin,
+		pretouchShadowSubmitRiskOnQuantityParam: true,
+		pretouchShadowSubmitOverlayOrderParam:   true,
+		"pretouchShadowStrict10CalendarPct":     defaultPretouchShadowStrict10Pct,
+		"pretouchShadowStrict15CalendarPct":     defaultPretouchShadowStrict15Pct,
+		"pretouchShadowSevere15CalendarPct":     defaultPretouchShadowSevere15Pct,
+		"pretouchShadowLeadAdverseBaselinePct":  22.971648,
 		// Speed gate
 		"pretouchSpeedThreshold": 0.228106,
 		// Quality filters
@@ -350,7 +364,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 	return LiveLaunchTemplate{
 		Key:                 "binance-testnet-eth-pretouch-timing",
 		Name:                "Binance Testnet ETHUSDT Pretouch Timing",
-		Description:         "ETHUSDT 1h pretouch timing 策略：timing classification × RF probability × cost_q50_cut050。Research 10bps kill stress: 23.29%, 0 neg SM。",
+		Description:         "ETHUSDT 1h pretouch timing 策略：testnet shadow 真实提交 lead 1.5x 与 T3 overlay 2.0x。",
 		Symbol:              "ETHUSDT",
 		SignalTimeframe:     "1h",
 		DefaultDispatchMode: liveLaunchTemplateAutoDispatchMode(),
@@ -417,10 +431,11 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		},
 		Notes: []string{
 			"ETH Pretouch Timing 策略：Go 原生 DT3 timing classifier × RF probability accuracy × cost_q50_cut050。",
-			"Research 验证：10bps kill stress 下 23.29% calendar sum，0 个负月，worst SM +1.40%。",
+			"Research shadow 口径：lead 1.5x / overlay 2.0x，strict 10bp 35.521555%，strict 15bp 28.970948%，severe 15bp 21.231073% kill-stress。",
 			"模型默认从 data/pretouch_model.json 加载；部署可用 BK_PRETOUCH_MODEL_PATH 覆盖模型路径。",
 			"模型不可用或校验失败时策略自动 skip 所有事件（不入场），不会退化为 fixed sizing。",
-			"positionSizingMode=intent_quantity，实际 entry 数量来自 pretouchBaseOrderQuantity × RF/cost sizing 后的 suggestedQuantity。",
+			"positionSizingMode=intent_quantity；testnet shadow 在 sandbox=true、executionMode=rest、depth/spread guard 通过时，真实 entry 数量按 lead 1.5x suggestedQuantity 提交。",
+			"T3 overlay 只在 testnet shadow、t3_swing 触达、speed_abs>=0.35 且 sandbox/rest/depth guard 通过时生成真实 entry proposal；非 sandbox 或显式关闭时只记录阻断原因。",
 			"该模板暂列默认推荐项；dispatchMode 由前端提交时显式注入，默认选择 auto-dispatch，可在前端切回 manual-review。",
 			"重训需显式运行 pretouch-train --events-csv <path> --out <path> 并审查新模型指标。",
 		},

@@ -1,9 +1,9 @@
-"""Conditional lead-scale policy for the ETH lead + T3 overlay candidate.
+"""Conditional risk-on sizing policy for the ETH lead + T3 overlay candidate.
 
-Research-only. This script tests a dynamic sizing rule: keep the current lead
-sizing by default, but allow a 1.25x lead notional/PnL scale when the order-book
-impact proxy is below a configured round-trip bps gate. It uses the same proxy
-profiles as ``t3_overlay_orderbook_impact_sensitivity.py``.
+Research-only. This script tests a dynamic sizing rule: keep current lead and
+overlay sizing by default, but allow larger lead/overlay notional/PnL scale when
+the order-book impact proxy is below configured round-trip bps gates. It uses
+the same proxy profiles as ``t3_overlay_orderbook_impact_sensitivity.py``.
 """
 
 from __future__ import annotations
@@ -43,11 +43,13 @@ DEFAULT_OUTPUT = OUTPUT_DIR / "t3_overlay_conditional_lead_scale"
 
 @dataclass(frozen=True)
 class ConditionalScenario:
-    """One conditional lead-scale policy result."""
+    """One conditional risk-on sizing policy result."""
 
     profile: str
     target_lead_scale: float
+    target_overlay_scale: float
     lead_impact_gate_round_trip_bps: float
+    overlay_impact_gate_round_trip_bps: float
     capital_capacity: float
     overlay_extra_round_trip_slippage_bps: float
     requested_trades: int
@@ -56,6 +58,8 @@ class ConditionalScenario:
     scaled_trades: int
     lead_scale_applied_trades: int
     lead_scale_blocked_trades: int
+    overlay_scale_applied_trades: int
+    overlay_scale_blocked_trades: int
     requested_notional_share: float
     allocated_notional_share: float
     allocation_ratio: float
@@ -81,13 +85,22 @@ def simulate_conditional_policy(
     lead_impact_gate_round_trip_bps: float,
     capital_capacity: float,
     overlay_extra_round_trip_slippage_bps: float,
+    target_overlay_scale: float = 1.0,
+    overlay_impact_gate_round_trip_bps: float | None = None,
 ) -> tuple[ConditionalScenario, pd.DataFrame]:
-    """Simulate conditional lead scaling under an impact-bps gate."""
+    """Simulate conditional leg scaling under impact-bps gates."""
     active: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     peak_active = 0.0
     lead_scaled = 0
     lead_blocked = 0
+    overlay_scaled = 0
+    overlay_blocked = 0
+    overlay_gate = (
+        float(overlay_impact_gate_round_trip_bps)
+        if overlay_impact_gate_round_trip_bps is not None
+        else float(lead_impact_gate_round_trip_bps)
+    )
 
     for _, row in windows.sort_values(["entry_time", "source", "exit_time"]).iterrows():
         entry_time = pd.Timestamp(row["entry_time"])
@@ -98,8 +111,9 @@ def simulate_conditional_policy(
         base_pnl = float(row["base_pnl_pct"])
         chosen_scale = 1.0
         scale_decision = "base"
+        source = str(row["source"])
 
-        if row["source"] == "lead" and target_lead_scale > 1.0:
+        if source == "lead" and target_lead_scale > 1.0:
             proposed_requested = base_requested * float(target_lead_scale)
             proposed_allocation_scale = min(1.0, available / proposed_requested) if proposed_requested > 0 else 0.0
             proposed_allocated = proposed_requested * proposed_allocation_scale
@@ -115,6 +129,22 @@ def simulate_conditional_policy(
             else:
                 scale_decision = "blocked"
                 lead_blocked += 1
+        elif source == "overlay" and target_overlay_scale > 1.0:
+            proposed_requested = base_requested * float(target_overlay_scale)
+            proposed_allocation_scale = min(1.0, available / proposed_requested) if proposed_requested > 0 else 0.0
+            proposed_allocated = proposed_requested * proposed_allocation_scale
+            proposed_impact = impact_round_trip_bps(
+                allocated_notional_share=proposed_allocated,
+                active_notional_before=active_notional,
+                profile=profile,
+            )
+            if proposed_allocation_scale >= 0.999999 and proposed_impact <= overlay_gate:
+                chosen_scale = float(target_overlay_scale)
+                scale_decision = "scaled"
+                overlay_scaled += 1
+            else:
+                scale_decision = "blocked"
+                overlay_blocked += 1
 
         requested = base_requested * chosen_scale
         chosen_base_pnl = base_pnl * chosen_scale
@@ -143,11 +173,17 @@ def simulate_conditional_policy(
             {
                 "profile": profile.name,
                 "target_lead_scale": float(target_lead_scale),
+                "target_overlay_scale": float(target_overlay_scale),
                 "lead_impact_gate_round_trip_bps": float(lead_impact_gate_round_trip_bps),
+                "overlay_impact_gate_round_trip_bps": float(overlay_gate),
                 "capital_capacity": float(capital_capacity),
                 "overlay_extra_round_trip_slippage_bps": float(overlay_extra_round_trip_slippage_bps),
-                "chosen_lead_scale": float(chosen_scale) if row["source"] == "lead" else 1.0,
-                "lead_scale_decision": scale_decision if row["source"] == "lead" else "overlay",
+                "requested_notional_share": round(float(requested), 8),
+                "chosen_lead_scale": float(chosen_scale) if source == "lead" else 1.0,
+                "chosen_overlay_scale": float(chosen_scale) if source == "overlay" else 1.0,
+                "scale_decision": scale_decision,
+                "lead_scale_decision": scale_decision if source == "lead" else "not_lead",
+                "overlay_scale_decision": scale_decision if source == "overlay" else "not_overlay",
                 "active_notional_before": round(float(active_notional), 8),
                 "available_notional_before": round(float(available), 8),
                 "allocation_scale": round(float(allocation_scale), 8),
@@ -167,7 +203,7 @@ def simulate_conditional_policy(
 
     ledger = pd.DataFrame(rows)
     filled = ledger[ledger["allocation_status"] != "skipped"].copy()
-    requested_notional = float(ledger["desired_notional_share"].sum())
+    requested_notional = float(ledger["requested_notional_share"].sum())
     allocated_notional = float(ledger["allocated_notional_share"].sum())
     monthly = filled.groupby("entry_month")["realized_pnl_pct"].sum() if not filled.empty else pd.Series(dtype=float)
     realized = filled.sort_values("exit_time")["realized_pnl_pct"] if not filled.empty else pd.Series(dtype=float)
@@ -175,7 +211,9 @@ def simulate_conditional_policy(
     scenario = ConditionalScenario(
         profile=profile.name,
         target_lead_scale=round(float(target_lead_scale), 6),
+        target_overlay_scale=round(float(target_overlay_scale), 6),
         lead_impact_gate_round_trip_bps=round(float(lead_impact_gate_round_trip_bps), 6),
+        overlay_impact_gate_round_trip_bps=round(float(overlay_gate), 6),
         capital_capacity=round(float(capital_capacity), 6),
         overlay_extra_round_trip_slippage_bps=round(float(overlay_extra_round_trip_slippage_bps), 6),
         requested_trades=int(len(ledger)),
@@ -184,6 +222,8 @@ def simulate_conditional_policy(
         scaled_trades=int((ledger["allocation_status"] == "scaled").sum()),
         lead_scale_applied_trades=int(lead_scaled),
         lead_scale_blocked_trades=int(lead_blocked),
+        overlay_scale_applied_trades=int(overlay_scaled),
+        overlay_scale_blocked_trades=int(overlay_blocked),
         requested_notional_share=round(requested_notional, 6),
         allocated_notional_share=round(allocated_notional, 6),
         allocation_ratio=round(allocated_notional / requested_notional, 6) if requested_notional > 0 else 0.0,
@@ -211,7 +251,9 @@ def _write_report(output_dir: Path, scenarios: pd.DataFrame, *, profiles: list[I
     ordered = scenarios.sort_values(
         [
             "profile",
+            "capital_capacity",
             "lead_impact_gate_round_trip_bps",
+            "overlay_impact_gate_round_trip_bps",
             "overlay_extra_round_trip_slippage_bps",
         ]
     )
@@ -236,13 +278,18 @@ def _write_report(output_dir: Path, scenarios: pd.DataFrame, *, profiles: list[I
             "",
             "## Matrix",
             "",
-            "| Profile | Gate | Overlay slip | Calendar | Worst month | Neg months | DD | Lead PnL | Overlay PnL | Scaled lead trades | Blocked lead trades | Impact cost | Max impact bps |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            "| Profile | Lead x | Overlay x | Capacity | Lead gate | Overlay gate | Overlay slip | Calendar | Worst month | Neg months | DD | Lead PnL | Overlay PnL | Scaled lead | Scaled overlay | Impact cost | Max impact bps |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for _, row in ordered.iterrows():
         lines.append(
-            f"| `{row['profile']}` | {float(row['lead_impact_gate_round_trip_bps']):.1f}bp "
+            f"| `{row['profile']}` "
+            f"| {float(row['target_lead_scale']):.2f}x "
+            f"| {float(row['target_overlay_scale']):.2f}x "
+            f"| {float(row['capital_capacity']):.2f} "
+            f"| {float(row['lead_impact_gate_round_trip_bps']):.1f}bp "
+            f"| {float(row['overlay_impact_gate_round_trip_bps']):.1f}bp "
             f"| {float(row['overlay_extra_round_trip_slippage_bps']):.1f}bp "
             f"| {float(row['calendar_sum_pct']):.6f}% "
             f"| {float(row['worst_month_pct']):.6f}% "
@@ -251,7 +298,7 @@ def _write_report(output_dir: Path, scenarios: pd.DataFrame, *, profiles: list[I
             f"| {float(row['lead_pnl_pct']):.6f}% "
             f"| {float(row['overlay_pnl_pct']):.6f}% "
             f"| {int(row['lead_scale_applied_trades'])} "
-            f"| {int(row['lead_scale_blocked_trades'])} "
+            f"| {int(row['overlay_scale_applied_trades'])} "
             f"| {float(row['impact_cost_pct']):.6f}% "
             f"| {float(row['max_impact_round_trip_bps']):.6f} |"
         )
@@ -260,8 +307,8 @@ def _write_report(output_dir: Path, scenarios: pd.DataFrame, *, profiles: list[I
             "",
             "## Read",
             "",
-            "- This is the research shape closest to a live guardrail: scale only when the impact gate passes.",
-            "- If strict profile at 15bp passes but severe profile blocks most scaling, the policy should be depth-gated in live.",
+            "- This is the research shape closest to a live guardrail: scale each leg only when its impact gate passes.",
+            "- If strict profile at 15bp passes but severe profile blocks most scaling, the policy should be depth-gated before live sizing changes.",
             "- This still needs real depth replay before any template sizing change.",
         ]
     )
@@ -278,32 +325,53 @@ def run(
     output_dir: Path,
     profiles: list[ImpactProfile],
     target_lead_scale: float,
+    target_overlay_scale: float,
     lead_impact_gates: list[float],
-    capital_capacity: float,
+    overlay_impact_gates: list[float] | None,
+    capital_capacity: float | None,
+    capital_capacities: list[float] | None,
     overlay_extra_round_trip_slippage_bps: list[float],
     write_ledgers: bool,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     windows = load_windows(lead_windows, overlay_windows)
     scenario_rows: list[dict[str, Any]] = []
+    capacities = (
+        [float(value) for value in capital_capacities]
+        if capital_capacities
+        else [float(capital_capacity) if capital_capacity is not None else 2.0]
+    )
+    overlay_gates = [float(value) for value in overlay_impact_gates] if overlay_impact_gates else [None]
     for profile in profiles:
-        for gate in lead_impact_gates:
-            for slippage_bps in overlay_extra_round_trip_slippage_bps:
-                scenario, ledger = simulate_conditional_policy(
-                    windows,
-                    profile=profile,
-                    target_lead_scale=target_lead_scale,
-                    lead_impact_gate_round_trip_bps=gate,
-                    capital_capacity=capital_capacity,
-                    overlay_extra_round_trip_slippage_bps=slippage_bps,
-                )
-                scenario_rows.append(asdict(scenario))
-                if write_ledgers:
-                    name = (
-                        f"conditional_ledger_{profile.name}_gate{str(gate).replace('.', 'p')}"
-                        f"_slip{str(slippage_bps).replace('.', 'p')}bps.csv"
-                    )
-                    ledger.to_csv(output_dir / name, index=False)
+        for capacity in capacities:
+            for lead_gate in lead_impact_gates:
+                for overlay_gate in overlay_gates:
+                    for slippage_bps in overlay_extra_round_trip_slippage_bps:
+                        scenario, ledger = simulate_conditional_policy(
+                            windows,
+                            profile=profile,
+                            target_lead_scale=target_lead_scale,
+                            target_overlay_scale=target_overlay_scale,
+                            lead_impact_gate_round_trip_bps=lead_gate,
+                            overlay_impact_gate_round_trip_bps=overlay_gate,
+                            capital_capacity=capacity,
+                            overlay_extra_round_trip_slippage_bps=slippage_bps,
+                        )
+                        scenario_rows.append(asdict(scenario))
+                        if write_ledgers:
+                            overlay_gate_label = (
+                                "same"
+                                if overlay_gate is None
+                                else str(overlay_gate).replace(".", "p")
+                            )
+                            name = (
+                                f"conditional_ledger_{profile.name}"
+                                f"_cap{str(capacity).replace('.', 'p')}"
+                                f"_leadgate{str(lead_gate).replace('.', 'p')}"
+                                f"_overlaygate{overlay_gate_label}"
+                                f"_slip{str(slippage_bps).replace('.', 'p')}bps.csv"
+                            )
+                            ledger.to_csv(output_dir / name, index=False)
     scenarios = pd.DataFrame(scenario_rows)
     scenarios.to_csv(output_dir / "t3_overlay_conditional_lead_scale_matrix.csv", index=False)
     _write_report(output_dir, scenarios, profiles=profiles)
@@ -313,8 +381,10 @@ def run(
         "overlay_windows": str(overlay_windows),
         "profiles": [asdict(profile) for profile in profiles],
         "target_lead_scale": float(target_lead_scale),
+        "target_overlay_scale": float(target_overlay_scale),
         "lead_impact_gates": lead_impact_gates,
-        "capital_capacity": float(capital_capacity),
+        "overlay_impact_gates": overlay_impact_gates,
+        "capital_capacities": capacities,
         "overlay_extra_round_trip_slippage_bps": overlay_extra_round_trip_slippage_bps,
         "scenarios": scenario_rows,
     }
@@ -332,8 +402,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--profiles", nargs="+")
     parser.add_argument("--target-lead-scale", type=float, default=1.25)
+    parser.add_argument("--target-overlay-scale", type=float, default=1.0)
     parser.add_argument("--lead-impact-gates", nargs="+", type=float, default=[6.0, 8.0, 10.0])
+    parser.add_argument("--overlay-impact-gates", nargs="+", type=float)
     parser.add_argument("--capital-capacity", type=float, default=2.0)
+    parser.add_argument("--capital-capacities", nargs="+", type=float)
     parser.add_argument(
         "--overlay-extra-round-trip-slippage-bps",
         nargs="+",
@@ -353,8 +426,15 @@ def main() -> int:
         output_dir=Path(args.output_dir),
         profiles=profiles,
         target_lead_scale=float(args.target_lead_scale),
+        target_overlay_scale=float(args.target_overlay_scale),
         lead_impact_gates=[float(value) for value in args.lead_impact_gates],
+        overlay_impact_gates=[float(value) for value in args.overlay_impact_gates]
+        if args.overlay_impact_gates
+        else None,
         capital_capacity=float(args.capital_capacity),
+        capital_capacities=[float(value) for value in args.capital_capacities]
+        if args.capital_capacities
+        else None,
         overlay_extra_round_trip_slippage_bps=[
             float(value) for value in args.overlay_extra_round_trip_slippage_bps
         ],
@@ -364,17 +444,22 @@ def main() -> int:
     selected = rows[
         (rows["profile"] == "strict_top1p2_active1p0")
         & (rows["lead_impact_gate_round_trip_bps"] == 10.0)
+        & (rows["overlay_impact_gate_round_trip_bps"] == 10.0)
         & (rows["overlay_extra_round_trip_slippage_bps"] == 15.0)
     ]
     row = selected.iloc[0] if not selected.empty else rows.iloc[0]
     print(
         "conditional_lead_scale "
         f"profile={row['profile']} "
-        f"gate={row['lead_impact_gate_round_trip_bps']:.1f}bps "
+        f"lead_scale={row['target_lead_scale']:.2f}x "
+        f"overlay_scale={row['target_overlay_scale']:.2f}x "
+        f"lead_gate={row['lead_impact_gate_round_trip_bps']:.1f}bps "
+        f"overlay_gate={row['overlay_impact_gate_round_trip_bps']:.1f}bps "
+        f"capacity={row['capital_capacity']:.2f} "
         f"overlay_rt_slip={row['overlay_extra_round_trip_slippage_bps']:.1f}bps "
         f"calendar_sum={row['calendar_sum_pct']:.6f}% "
         f"scaled_lead_trades={int(row['lead_scale_applied_trades'])} "
-        f"blocked_lead_trades={int(row['lead_scale_blocked_trades'])}"
+        f"scaled_overlay_trades={int(row['overlay_scale_applied_trades'])}"
     )
     return 0
 

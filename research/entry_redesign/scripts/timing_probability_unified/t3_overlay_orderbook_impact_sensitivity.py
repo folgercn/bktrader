@@ -61,6 +61,7 @@ class ImpactScenario:
 
     profile: str
     lead_scale: float
+    overlay_scale: float
     capital_capacity: float
     overlay_extra_round_trip_slippage_bps: float
     requested_trades: int
@@ -133,10 +134,11 @@ def parse_profiles(values: list[str] | None) -> list[ImpactProfile]:
     return profiles
 
 
-def apply_lead_scale(windows: pd.DataFrame, lead_scale: float) -> pd.DataFrame:
-    """Scale lead notional and PnL linearly as a what-if diagnostic."""
+def apply_leg_scales(windows: pd.DataFrame, *, lead_scale: float, overlay_scale: float) -> pd.DataFrame:
+    """Scale lead/overlay notional and PnL linearly as a what-if diagnostic."""
     out = windows.copy()
     lead_mask = out["source"] == "lead"
+    overlay_mask = out["source"] == "overlay"
     out.loc[lead_mask, "desired_notional_share"] = (
         pd.to_numeric(out.loc[lead_mask, "desired_notional_share"], errors="coerce").fillna(0.0)
         * float(lead_scale)
@@ -145,8 +147,22 @@ def apply_lead_scale(windows: pd.DataFrame, lead_scale: float) -> pd.DataFrame:
         pd.to_numeric(out.loc[lead_mask, "base_pnl_pct"], errors="coerce").fillna(0.0)
         * float(lead_scale)
     )
+    out.loc[overlay_mask, "desired_notional_share"] = (
+        pd.to_numeric(out.loc[overlay_mask, "desired_notional_share"], errors="coerce").fillna(0.0)
+        * float(overlay_scale)
+    )
+    out.loc[overlay_mask, "base_pnl_pct"] = (
+        pd.to_numeric(out.loc[overlay_mask, "base_pnl_pct"], errors="coerce").fillna(0.0)
+        * float(overlay_scale)
+    )
     out["lead_scale"] = float(lead_scale)
+    out["overlay_scale"] = float(overlay_scale)
     return out
+
+
+def apply_lead_scale(windows: pd.DataFrame, lead_scale: float) -> pd.DataFrame:
+    """Scale lead notional and PnL linearly as a backward-compatible helper."""
+    return apply_leg_scales(windows, lead_scale=lead_scale, overlay_scale=1.0)
 
 
 def impact_round_trip_bps(
@@ -171,12 +187,14 @@ def simulate_impact(
     capital_capacity: float,
     overlay_extra_round_trip_slippage_bps: float,
     lead_scale: float,
+    overlay_scale: float = 1.0,
 ) -> tuple[ImpactScenario, pd.DataFrame]:
     """Allocate windows and apply order-book impact proxy costs."""
     if windows.empty:
         scenario = ImpactScenario(
             profile=profile.name,
             lead_scale=float(lead_scale),
+            overlay_scale=float(overlay_scale),
             capital_capacity=float(capital_capacity),
             overlay_extra_round_trip_slippage_bps=float(overlay_extra_round_trip_slippage_bps),
             requested_trades=0,
@@ -237,6 +255,7 @@ def simulate_impact(
             {
                 "profile": profile.name,
                 "lead_scale": float(lead_scale),
+                "overlay_scale": float(overlay_scale),
                 "capital_capacity": float(capital_capacity),
                 "overlay_extra_round_trip_slippage_bps": float(overlay_extra_round_trip_slippage_bps),
                 "active_notional_before": round(float(active_notional), 8),
@@ -267,6 +286,7 @@ def simulate_impact(
     scenario = ImpactScenario(
         profile=profile.name,
         lead_scale=round(float(lead_scale), 6),
+        overlay_scale=round(float(overlay_scale), 6),
         capital_capacity=round(float(capital_capacity), 6),
         overlay_extra_round_trip_slippage_bps=round(float(overlay_extra_round_trip_slippage_bps), 6),
         requested_trades=int(len(ledger)),
@@ -310,6 +330,7 @@ def _write_report(
         [
             "profile",
             "lead_scale",
+            "overlay_scale",
             "capital_capacity",
             "overlay_extra_round_trip_slippage_bps",
         ]
@@ -321,7 +342,7 @@ def _write_report(
         "",
         f"- Lead windows: `{lead_windows}`",
         f"- Overlay windows: `{overlay_windows}`",
-        "- Lead scaling is linear and diagnostic only.",
+        "- Lead/overlay scaling is linear and diagnostic only.",
         "- Impact bps are additional round-trip costs on allocated notional.",
         "",
         "## Profiles",
@@ -340,13 +361,14 @@ def _write_report(
             "",
             "## Matrix",
             "",
-            "| Profile | Lead scale | Capacity | Overlay slip | Calendar | Worst month | Neg months | DD | Lead PnL | Overlay PnL | Impact cost | Overlay slip cost | Max impact bps | Peak active |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            "| Profile | Lead scale | Overlay scale | Capacity | Overlay slip | Calendar | Worst month | Neg months | DD | Lead PnL | Overlay PnL | Impact cost | Overlay slip cost | Max impact bps | Peak active |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for _, row in ordered.iterrows():
         lines.append(
             f"| `{row['profile']}` | {float(row['lead_scale']):.2f} "
+            f"| {float(row['overlay_scale']):.2f} "
             f"| {float(row['capital_capacity']):.2f} "
             f"| {float(row['overlay_extra_round_trip_slippage_bps']):.1f}bp "
             f"| {float(row['calendar_sum_pct']):.6f}% "
@@ -383,6 +405,7 @@ def run(
     output_dir: Path,
     profiles: list[ImpactProfile],
     lead_scales: list[float],
+    overlay_scales: list[float],
     capacities: list[float],
     overlay_extra_round_trip_slippage_bps: list[float],
     write_ledgers: bool,
@@ -391,24 +414,27 @@ def run(
     base_windows = load_windows(lead_windows, overlay_windows)
     scenario_rows: list[dict[str, Any]] = []
     for lead_scale in lead_scales:
-        windows = apply_lead_scale(base_windows, lead_scale)
-        for profile in profiles:
-            for capacity in capacities:
-                for slippage_bps in overlay_extra_round_trip_slippage_bps:
-                    scenario, ledger = simulate_impact(
-                        windows,
-                        profile=profile,
-                        capital_capacity=capacity,
-                        overlay_extra_round_trip_slippage_bps=slippage_bps,
-                        lead_scale=lead_scale,
-                    )
-                    scenario_rows.append(asdict(scenario))
-                    if write_ledgers:
-                        name = (
-                            f"impact_ledger_{profile.name}_lead{_label_number(lead_scale)}"
-                            f"_cap{_label_number(capacity)}_slip{_label_number(slippage_bps)}bps.csv"
+        for overlay_scale in overlay_scales:
+            windows = apply_leg_scales(base_windows, lead_scale=lead_scale, overlay_scale=overlay_scale)
+            for profile in profiles:
+                for capacity in capacities:
+                    for slippage_bps in overlay_extra_round_trip_slippage_bps:
+                        scenario, ledger = simulate_impact(
+                            windows,
+                            profile=profile,
+                            capital_capacity=capacity,
+                            overlay_extra_round_trip_slippage_bps=slippage_bps,
+                            lead_scale=lead_scale,
+                            overlay_scale=overlay_scale,
                         )
-                        ledger.to_csv(output_dir / name, index=False)
+                        scenario_rows.append(asdict(scenario))
+                        if write_ledgers:
+                            name = (
+                                f"impact_ledger_{profile.name}_lead{_label_number(lead_scale)}"
+                                f"_overlay{_label_number(overlay_scale)}_cap{_label_number(capacity)}"
+                                f"_slip{_label_number(slippage_bps)}bps.csv"
+                            )
+                            ledger.to_csv(output_dir / name, index=False)
 
     scenarios = pd.DataFrame(scenario_rows)
     scenarios.to_csv(output_dir / "t3_overlay_orderbook_impact_sensitivity_matrix.csv", index=False)
@@ -421,13 +447,14 @@ def run(
     )
     payload = {
         "note": (
-            "Research-only order-book impact proxy. Lead scale is linear; "
+            "Research-only order-book impact proxy. Lead/overlay scales are linear; "
             "impact costs are additional round-trip bps on allocated notional."
         ),
         "lead_windows": str(lead_windows),
         "overlay_windows": str(overlay_windows),
         "profiles": [asdict(profile) for profile in profiles],
         "lead_scales": lead_scales,
+        "overlay_scales": overlay_scales,
         "capacities": capacities,
         "overlay_extra_round_trip_slippage_bps": overlay_extra_round_trip_slippage_bps,
         "scenarios": scenario_rows,
@@ -446,6 +473,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--profiles", nargs="+")
     parser.add_argument("--lead-scales", nargs="+", type=float, default=[1.0, 1.25, 1.5])
+    parser.add_argument("--overlay-scales", nargs="+", type=float, default=[1.0])
     parser.add_argument("--capacities", nargs="+", type=float, default=[1.6, 2.0, 2.5])
     parser.add_argument(
         "--overlay-extra-round-trip-slippage-bps",
@@ -466,6 +494,7 @@ def main() -> int:
         output_dir=Path(args.output_dir),
         profiles=profiles,
         lead_scales=[float(value) for value in args.lead_scales],
+        overlay_scales=[float(value) for value in args.overlay_scales],
         capacities=[float(value) for value in args.capacities],
         overlay_extra_round_trip_slippage_bps=[
             float(value) for value in args.overlay_extra_round_trip_slippage_bps
@@ -476,6 +505,7 @@ def main() -> int:
     selected = rows[
         (rows["profile"] == "strict_top1p2_active1p0")
         & (rows["lead_scale"] == 1.25)
+        & (rows["overlay_scale"] == 1.0)
         & (rows["capital_capacity"] == 2.0)
         & (rows["overlay_extra_round_trip_slippage_bps"] == 15.0)
     ]
@@ -484,6 +514,7 @@ def main() -> int:
         "orderbook_impact "
         f"profile={row['profile']} "
         f"lead_scale={row['lead_scale']:.2f} "
+        f"overlay_scale={row['overlay_scale']:.2f} "
         f"capacity={row['capital_capacity']:.2f} "
         f"overlay_rt_slip={row['overlay_extra_round_trip_slippage_bps']:.1f}bps "
         f"calendar_sum={row['calendar_sum_pct']:.6f}% "

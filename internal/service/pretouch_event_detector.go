@@ -342,6 +342,137 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 	}
 }
 
+// OnTickT3Overlay detects the research T3 swing breakout event used only by the
+// ETH pretouch testnet-shadow overlay leg.
+func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetectionResult {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	cutoff := tick.Time.Add(-300 * time.Second)
+	newWindow := make([]TickData, 0, len(d.tickWindow)+1)
+	for _, t := range d.tickWindow {
+		if t.Time.After(cutoff) {
+			newWindow = append(newWindow, t)
+		}
+	}
+	newWindow = append(newWindow, tick)
+	d.tickWindow = newWindow
+
+	if d.currentBar != nil {
+		if tick.Price > d.currentBar.High {
+			d.currentBar.High = tick.Price
+		}
+		if tick.Price < d.currentBar.Low {
+			d.currentBar.Low = tick.Price
+		}
+		d.currentBar.Close = tick.Price
+	}
+
+	if len(d.hourlyBars) < 3 {
+		return PretouchDetectionResult{Reason: "t3_insufficient_bar_history"}
+	}
+	if d.touchedThisBar {
+		return PretouchDetectionResult{Reason: "t3_already_touched_this_bar"}
+	}
+	if d.currentBar == nil {
+		return PretouchDetectionResult{Reason: "t3_no_current_bar"}
+	}
+
+	atr := d.computeATR()
+	if atr <= 0 {
+		return PretouchDetectionResult{Reason: "t3_zero_atr"}
+	}
+
+	prevBar1 := d.hourlyBars[len(d.hourlyBars)-1]
+	prevBar2 := d.hourlyBars[len(d.hourlyBars)-2]
+	prevBar3 := d.hourlyBars[len(d.hourlyBars)-3]
+
+	var side string
+	var level float64
+	longReady := pretouchT3LongStructureReady(prevBar3.High, prevBar2.High, prevBar1.High)
+	shortReady := pretouchT3ShortStructureReady(prevBar3.Low, prevBar2.Low, prevBar1.Low)
+	if tick.Price >= prevBar3.High && longReady {
+		side = "long"
+		level = prevBar3.High
+	} else if tick.Price <= prevBar3.Low && shortReady {
+		side = "short"
+		level = prevBar3.Low
+	} else {
+		return PretouchDetectionResult{Reason: "t3_no_level_touch"}
+	}
+
+	touchTime := tick.Time
+	touchPrice := tick.Price
+	signalBarStart := d.currentBar.OpenTime
+	preTouchSeconds := touchTime.Sub(signalBarStart).Seconds()
+	if preTouchSeconds > d.config.MaxPreTouchSeconds {
+		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_pre_touch_seconds=%.0f > %.0f", preTouchSeconds, d.config.MaxPreTouchSeconds)}
+	}
+
+	touchExtATR := (touchPrice - level) / atr
+	if side == "short" {
+		touchExtATR = (level - touchPrice) / atr
+	}
+	speed300s := d.computeSpeed300s(atr)
+	if math.Abs(speed300s) < d.config.MinSpeed300sATR {
+		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_speed_300s=%.4f < %.4f", math.Abs(speed300s), d.config.MinSpeed300sATR)}
+	}
+	eff300s := d.computeEff300s()
+	if eff300s > d.config.MaxEff300s {
+		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_eff_300s=%.4f > %.4f", eff300s, d.config.MaxEff300s)}
+	}
+
+	roundtripCostATR := 0.10
+	if tick.BestAsk > 0 && tick.BestBid > 0 && tick.BestAsk >= tick.BestBid {
+		roundtripCostATR = (tick.BestAsk - tick.BestBid) / atr
+	}
+	costPenalty := 1.0
+	if roundtripCostATR >= d.config.CostQ50Threshold {
+		costPenalty = d.config.CostQ50Penalty
+	}
+
+	d.touchedThisBar = true
+	d.lastTouchTime = touchTime
+
+	features := map[string]float64{
+		"touch_extension_atr":      touchExtATR,
+		"speed_300s_atr":           speed300s,
+		"roundtrip_cost_atr":       roundtripCostATR,
+		"eff_300s":                 eff300s,
+		"pre_touch_seconds":        preTouchSeconds,
+		"signal_atr_percentile":    d.computeATRPercentile(atr),
+		"prev1_body_atr":           math.Abs(prevBar1.Close-prevBar1.Open) / atr,
+		"prev1_range_atr":          (prevBar1.High - prevBar1.Low) / atr,
+		"prev1_close_pos_side":     d.computeClosePosSide(prevBar1, side),
+		"prev_sma5_gap_atr":        d.computeSMA5Gap(atr),
+		"prev_sma5_slope_atr":      d.computeSMA5Slope(atr),
+		"level_to_prev_close_atr":  d.computeLevelToPrevClose(level, prevBar1.Close, atr, side),
+		"level_to_signal_open_atr": (level - d.currentBar.Open) / atr,
+	}
+
+	event := domain.PretouchEvent{
+		EventID:           fmt.Sprintf("%s_t3_%s_%s", d.symbol, touchTime.Format("20060102_150405"), side),
+		Symbol:            d.symbol,
+		Side:              side,
+		TouchTime:         touchTime,
+		TouchPrice:        touchPrice,
+		Level:             level,
+		ATR:               atr,
+		TouchExtensionATR: touchExtATR,
+		Speed300sATR:      speed300s,
+		Eff300s:           eff300s,
+		PreTouchSeconds:   preTouchSeconds,
+		RoundtripCostATR:  roundtripCostATR,
+		SignalBarStart:    signalBarStart,
+		Features:          features,
+		CostPenalty:       costPenalty,
+	}
+	return PretouchDetectionResult{
+		Detected: true,
+		Event:    event,
+	}
+}
+
 func pretouchLongStructureReady(prevHigh2, prevHigh1, toleranceBps float64) bool {
 	if prevHigh2 <= 0 || prevHigh1 <= 0 {
 		return false
@@ -356,6 +487,24 @@ func pretouchShortStructureReady(prevLow2, prevLow1, toleranceBps float64) bool 
 		return false
 	}
 	return prevLow2 < prevLow1*(1-toleranceBps/10000.0)
+}
+
+func pretouchT3LongStructureReady(prevHigh3, prevHigh2, prevHigh1 float64) bool {
+	return prevHigh3 > 0 &&
+		prevHigh2 > 0 &&
+		prevHigh1 > 0 &&
+		prevHigh3 > prevHigh2 &&
+		prevHigh3 > prevHigh1 &&
+		prevHigh1 > prevHigh2
+}
+
+func pretouchT3ShortStructureReady(prevLow3, prevLow2, prevLow1 float64) bool {
+	return prevLow3 > 0 &&
+		prevLow2 > 0 &&
+		prevLow1 > 0 &&
+		prevLow3 < prevLow2 &&
+		prevLow3 < prevLow1 &&
+		prevLow1 < prevLow2
 }
 
 // --- Internal computation helpers ---

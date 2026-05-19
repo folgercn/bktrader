@@ -9,7 +9,7 @@ def _live_summary(sample_entries: int = 6, combined_pass: int = 6, headroom: flo
     return {
         "matrix": [
             {
-                "quantity_scale": 1.25,
+                "quantity_scale": 1.5,
                 "sample_entries": sample_entries,
                 "combined_pass_entries": combined_pass,
                 "min_scaled_top_depth_coverage": 10.0,
@@ -29,19 +29,25 @@ def _conditional_summary(
         "scenarios": [
             {
                 "profile": "strict_top1p2_active1p0",
-                "lead_impact_gate_round_trip_bps": 10.0,
+                "target_lead_scale": 1.5,
+                "target_overlay_scale": 2.0,
+                "lead_impact_gate_round_trip_bps": 20.0,
                 "overlay_extra_round_trip_slippage_bps": 15.0,
                 "calendar_sum_pct": strict15,
             },
             {
                 "profile": "strict_top1p2_active1p0",
-                "lead_impact_gate_round_trip_bps": 10.0,
+                "target_lead_scale": 1.5,
+                "target_overlay_scale": 2.0,
+                "lead_impact_gate_round_trip_bps": 20.0,
                 "overlay_extra_round_trip_slippage_bps": 20.0,
                 "calendar_sum_pct": strict20,
             },
             {
                 "profile": "severe_top1p0_active2p0",
-                "lead_impact_gate_round_trip_bps": 10.0,
+                "target_lead_scale": 1.5,
+                "target_overlay_scale": 2.0,
+                "lead_impact_gate_round_trip_bps": 20.0,
                 "overlay_extra_round_trip_slippage_bps": 15.0,
                 "calendar_sum_pct": severe15,
             },

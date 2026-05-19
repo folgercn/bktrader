@@ -609,7 +609,7 @@ def main() -> int:
         history_csv=args.history_csv,
     )
     matrix = pd.DataFrame(result["matrix"])
-    selected = matrix[matrix["quantity_scale"] == 1.25]
+    selected = matrix[matrix["quantity_scale"] == 1.5]
     row = selected.iloc[0] if not selected.empty else matrix.iloc[0]
     print(
         "live_depth_calibration "

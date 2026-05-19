@@ -50,6 +50,373 @@ func TestPretouchTimingEngineAdvancePlanProducesLiveIntentMetadata(t *testing.T)
 	}
 }
 
+func TestPretouchTimingEngineAddsRiskOnShadowMetadataWithoutChangingIntentQuantity(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	ctx.ExecutionContext.Parameters["pretouchShadowMode"] = pretouchShadowModeTestnetCollect
+	ctx.ExecutionContext.Parameters["pretouchShadowLeadScale"] = 1.5
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayScale"] = 2.0
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	ctx.ExecutionContext.Parameters["pretouchShadowMode"] = pretouchShadowModeTestnetCollect
+	ctx.ExecutionContext.Parameters["pretouchShadowLeadScale"] = 1.5
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayScale"] = 2.0
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected submitted suggested quantity to remain 0.12, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	if got := stringValue(shadow["mode"]); got != pretouchShadowModeTestnetCollect {
+		t.Fatalf("expected shadow mode %s, got %s", pretouchShadowModeTestnetCollect, got)
+	}
+	if got := parseFloatValue(shadow["leadScale"]); got != 1.5 {
+		t.Fatalf("expected shadow lead scale 1.5, got %v", got)
+	}
+	if got := parseFloatValue(shadow["overlayScale"]); got != 2.0 {
+		t.Fatalf("expected shadow overlay scale 2.0, got %v", got)
+	}
+	if got := parseFloatValue(shadow["shadowLeadQuantity"]); math.Abs(got-0.18) > 1e-9 {
+		t.Fatalf("expected shadow lead quantity 0.18, got %v", got)
+	}
+	if !boolValue(shadow["submittedQuantityUnchanged"]) || boolValue(shadow["submittedRiskOnQuantityEnabled"]) {
+		t.Fatalf("expected shadow metadata to keep submitted quantity unchanged: %#v", shadow)
+	}
+
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected live signal intent from decision")
+	}
+	if math.Abs(intent.Quantity-0.12) > 1e-9 {
+		t.Fatalf("expected live intent quantity to remain submitted quantity 0.12, got %v", intent.Quantity)
+	}
+}
+
+func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, 105.09, 105.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected production suggested quantity 0.12, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.18) > 1e-9 {
+		t.Fatalf("expected submitted suggested quantity to use 1.5x lead size 0.18, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	if !boolValue(shadow["submittedRiskOnQuantityRequested"]) || !boolValue(shadow["submittedRiskOnQuantityEnabled"]) {
+		t.Fatalf("expected risk-on submitted quantity enabled: %#v", shadow)
+	}
+	if boolValue(shadow["submittedQuantityUnchanged"]) {
+		t.Fatalf("expected submitted quantity to change under sandbox risk-on shadow: %#v", shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityBeforeShadow"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected before-shadow quantity 0.12, got %v in %#v", got, shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.18) > 1e-9 {
+		t.Fatalf("expected after-shadow quantity 0.18, got %v in %#v", got, shadow)
+	}
+	if got := stringValue(shadow["submittedRiskOnQuantityBlockReason"]); got != "" {
+		t.Fatalf("expected no risk-on block reason, got %s in %#v", got, shadow)
+	}
+
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected live signal intent from decision")
+	}
+	if math.Abs(intent.Quantity-0.18) > 1e-9 {
+		t.Fatalf("expected live intent quantity to submit 1.5x lead quantity 0.18, got %v", intent.Quantity)
+	}
+}
+
+func TestPretouchTimingEngineBlocksRiskOnLeadQuantityOutsideSandbox(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, false)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, false)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected mainnet/non-sandbox to keep production quantity 0.12, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	if boolValue(shadow["submittedRiskOnQuantityEnabled"]) || !boolValue(shadow["submittedQuantityUnchanged"]) {
+		t.Fatalf("expected risk-on quantity to stay blocked outside sandbox: %#v", shadow)
+	}
+	if got := stringValue(shadow["submittedRiskOnQuantityBlockReason"]); got != "sandbox_required" {
+		t.Fatalf("expected sandbox_required block reason, got %s in %#v", got, shadow)
+	}
+}
+
+func TestPretouchTimingEngineHonorsRiskOnLeadQuantityOptOut(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowSubmitRiskOnQuantityParam] = false
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowSubmitRiskOnQuantityParam] = false
+	setPretouchOrderBook(&ctx, 105.09, 105.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected explicit opt-out to keep production quantity 0.12, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	if boolValue(shadow["submittedRiskOnQuantityRequested"]) || boolValue(shadow["submittedRiskOnQuantityEnabled"]) {
+		t.Fatalf("expected explicit risk-on opt-out to disable submitted quantity lift: %#v", shadow)
+	}
+	if got := stringValue(shadow["submittedRiskOnQuantityBlockReason"]); got != "risk_on_quantity_not_requested" {
+		t.Fatalf("expected opt-out block reason, got %s in %#v", got, shadow)
+	}
+}
+
+func TestPretouchShadowSizingBlocksWhenScaledTopDepthIsTooThin(t *testing.T) {
+	shadow := pretouchShadowSizingFromParameters(
+		map[string]any{
+			"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
+			"pretouchShadowLeadScale":               1.5,
+			pretouchShadowSubmitRiskOnQuantityParam: true,
+			"executionEntryMinTopBookCoverage":      0.5,
+			"executionEntryMaxSpreadBps":            8.0,
+		},
+		"BUY",
+		0.12,
+		orderBookDecisionStats{
+			bestAskQty: 0.01,
+			spreadBps:  1.0,
+		},
+		pretouchShadowSubmitContext{
+			liveExecution: true,
+			sandbox:       true,
+			executionMode: "rest",
+		},
+	)
+
+	if shadow == nil {
+		t.Fatal("expected shadow sizing metadata")
+	}
+	if boolValue(shadow["shadowPreSubmitPass"]) {
+		t.Fatalf("expected thin top-depth to block shadow sizing: %#v", shadow)
+	}
+	if got := stringValue(shadow["shadowBlockReason"]); got != "shadow_top_depth_coverage_below_min" {
+		t.Fatalf("expected top-depth block reason, got %s in %#v", got, shadow)
+	}
+	if !boolValue(shadow["submittedQuantityUnchanged"]) || boolValue(shadow["submittedRiskOnQuantityEnabled"]) {
+		t.Fatalf("expected failed shadow sizing to remain telemetry-only: %#v", shadow)
+	}
+	if got := stringValue(shadow["submittedRiskOnQuantityBlockReason"]); got != "shadow_top_depth_coverage_below_min" {
+		t.Fatalf("expected risk-on block to reuse shadow guard reason, got %s in %#v", got, shadow)
+	}
+}
+
+func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected T3 overlay advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := stringValue(decision.Metadata["pretouchEventShape"]); got != "t3_swing" {
+		t.Fatalf("expected t3_swing event shape, got %s", got)
+	}
+	if got := stringValue(decision.Metadata["nextPlannedReason"]); got != "Pretouch-T3-Overlay" {
+		t.Fatalf("expected T3 overlay reason, got %s", got)
+	}
+	if got := stringValue(decision.Metadata["signalKind"]); got != "entry-t3-overlay" {
+		t.Fatalf("expected entry-t3-overlay signal kind, got %s", got)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.08) > 1e-9 {
+		t.Fatalf("expected T3 overlay 2.0x quantity 0.08, got %v", got)
+	}
+	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
+	if overlay == nil {
+		t.Fatalf("expected pretouchShadowOverlaySizing metadata: %#v", decision.Metadata)
+	}
+	if !boolValue(overlay["submittedOverlayOrderRequested"]) || !boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected overlay order enabled in sandbox shadow: %#v", overlay)
+	}
+	if got := parseFloatValue(overlay["overlayBaseShare"]); math.Abs(got-0.40) > 1e-9 {
+		t.Fatalf("expected overlay base share 0.40, got %v in %#v", got, overlay)
+	}
+	if got := parseFloatValue(overlay["overlayScale"]); math.Abs(got-2.0) > 1e-9 {
+		t.Fatalf("expected overlay scale 2.0, got %v in %#v", got, overlay)
+	}
+	if got := parseFloatValue(overlay["shadowOverlayQuantity"]); math.Abs(got-0.08) > 1e-9 {
+		t.Fatalf("expected shadow overlay quantity 0.08, got %v in %#v", got, overlay)
+	}
+
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected T3 overlay live signal intent")
+	}
+	if intent.SignalKind != "entry-t3-overlay" || intent.Reason != "Pretouch-T3-Overlay" {
+		t.Fatalf("unexpected T3 overlay intent: %#v", intent)
+	}
+	if math.Abs(intent.Quantity-0.08) > 1e-9 {
+		t.Fatalf("expected T3 overlay intent quantity 0.08, got %v", intent.Quantity)
+	}
+}
+
+func TestPretouchTimingEngineBlocksT3OverlayOutsideSandbox(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, false)
+
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, false)
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" {
+		t.Fatalf("expected non-sandbox T3 overlay to wait, got %#v", decision)
+	}
+	if decision.Reason != "sandbox_required" {
+		t.Fatalf("expected sandbox_required block reason, got %s", decision.Reason)
+	}
+	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
+	if overlay == nil {
+		t.Fatalf("expected overlay sizing metadata: %#v", decision.Metadata)
+	}
+	if boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected overlay order blocked outside sandbox: %#v", overlay)
+	}
+	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
+		t.Fatalf("expected no live intent for blocked overlay, got %#v", intent)
+	}
+}
+
+func TestPretouchShadowOverlaySizingBlocksWhenScaledTopDepthIsTooThin(t *testing.T) {
+	overlay := pretouchShadowOverlaySizingFromParameters(
+		map[string]any{
+			"pretouchShadowMode":                  pretouchShadowModeTestnetCollect,
+			"pretouchShadowOverlayScale":          2.0,
+			"pretouchShadowOverlayBaseShare":      0.40,
+			pretouchShadowSubmitOverlayOrderParam: true,
+			"executionEntryMinTopBookCoverage":    0.5,
+			"executionEntryMaxSpreadBps":          8.0,
+		},
+		"BUY",
+		0.1,
+		orderBookDecisionStats{
+			bestAskQty: 0.01,
+			spreadBps:  1.0,
+		},
+		pretouchShadowSubmitContext{
+			liveExecution: true,
+			sandbox:       true,
+			executionMode: "rest",
+		},
+	)
+	if overlay == nil {
+		t.Fatal("expected overlay sizing metadata")
+	}
+	if boolValue(overlay["shadowPreSubmitPass"]) {
+		t.Fatalf("expected thin top-depth to block overlay sizing: %#v", overlay)
+	}
+	if boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected failed overlay sizing to block order submission: %#v", overlay)
+	}
+	if got := stringValue(overlay["submittedOverlayOrderBlockReason"]); got != "shadow_top_depth_coverage_below_min" {
+		t.Fatalf("expected overlay block to reuse depth reason, got %s in %#v", got, overlay)
+	}
+}
+
 func TestPretouchTimingEngineProducesRiskExitForLongStopLossBreach(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
@@ -289,9 +656,10 @@ func TestPretouchBarsFromEvaluationContextSynthesizesCurrentBar(t *testing.T) {
 func testPretouchTimingEngine(timingRegime string, rfProba float64) *bkLiveEthPretouchTimingEngine {
 	config := DefaultPretouchDetectorConfig()
 	return &bkLiveEthPretouchTimingEngine{
-		platform: NewPlatform(memory.NewStore()),
-		detector: NewPretouchEventDetector("ETHUSDT", config),
-		config:   config,
+		platform:   NewPlatform(memory.NewStore()),
+		detector:   NewPretouchEventDetector("ETHUSDT", config),
+		t3Detector: NewPretouchEventDetector("ETHUSDT", config),
+		config:     config,
 		model: &PretouchModelBundle{
 			TimingTree: &TreeNode{FeatureIndex: -1, LeafValue: timingRegime, LeafProba: 1},
 			RFModel: &RandomForest{
@@ -346,9 +714,51 @@ func testPretouchSignalContext(eventTime time.Time, price float64) StrategySigna
 	}
 }
 
+func testPretouchT3OverlaySignalContext(eventTime time.Time, price float64) StrategySignalEvaluationContext {
+	currentStart := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	ctx := testPretouchSignalContext(eventTime, price)
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = testPretouchT3SignalBars(currentStart)
+	return ctx
+}
+
 func testPretouchSignalBars(currentStart time.Time) []any {
 	bars := make([]any, 0, 7)
 	for _, bar := range pretouchDetectorClosedBars(currentStart) {
+		bars = append(bars, map[string]any{
+			"symbol":    "ETHUSDT",
+			"timeframe": "1h",
+			"barStart":  bar.OpenTime.Format(time.RFC3339),
+			"open":      bar.Open,
+			"high":      bar.High,
+			"low":       bar.Low,
+			"close":     bar.Close,
+			"isClosed":  true,
+		})
+	}
+	bars = append(bars, map[string]any{
+		"symbol":    "ETHUSDT",
+		"timeframe": "1h",
+		"barStart":  currentStart.Format(time.RFC3339),
+		"open":      100.0,
+		"high":      100.0,
+		"low":       100.0,
+		"close":     100.0,
+		"isClosed":  false,
+	})
+	return bars
+}
+
+func testPretouchT3SignalBars(currentStart time.Time) []any {
+	closed := []HourlyBar{
+		{OpenTime: currentStart.Add(-6 * time.Hour), Open: 100, High: 101, Low: 99, Close: 100},
+		{OpenTime: currentStart.Add(-5 * time.Hour), Open: 100, High: 102, Low: 98, Close: 100},
+		{OpenTime: currentStart.Add(-4 * time.Hour), Open: 100, High: 104, Low: 96, Close: 100},
+		{OpenTime: currentStart.Add(-3 * time.Hour), Open: 100, High: 106, Low: 94, Close: 100},
+		{OpenTime: currentStart.Add(-2 * time.Hour), Open: 100, High: 103, Low: 95, Close: 100},
+		{OpenTime: currentStart.Add(-1 * time.Hour), Open: 100, High: 104, Low: 96, Close: 100},
+	}
+	bars := make([]any, 0, len(closed)+1)
+	for _, bar := range closed {
 		bars = append(bars, map[string]any{
 			"symbol":    "ETHUSDT",
 			"timeframe": "1h",
@@ -425,6 +835,21 @@ func testPretouchExitSignalBarStates(currentStart time.Time, closePrice float64)
 				"isClosed":  true,
 			},
 		},
+	}
+}
+
+func enablePretouchRiskOnShadow(ctx *StrategySignalEvaluationContext, sandbox bool) {
+	ctx.ExecutionContext.Parameters["pretouchShadowMode"] = pretouchShadowModeTestnetCollect
+	ctx.ExecutionContext.Parameters["pretouchShadowLeadScale"] = 1.5
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayScale"] = 2.0
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayBaseShare"] = 0.40
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlaySpeedThreshold"] = 0.35
+	ctx.ExecutionContext.Parameters[pretouchShadowSubmitRiskOnQuantityParam] = true
+	ctx.ExecutionContext.Parameters[pretouchShadowSubmitOverlayOrderParam] = true
+	ctx.ExecutionContext.Semantics = defaultExecutionSemantics(ExecutionModeLive, ctx.ExecutionContext.Parameters)
+	ctx.LiveAccountBinding = map[string]any{
+		"sandbox":       sandbox,
+		"executionMode": "rest",
 	}
 }
 
