@@ -620,7 +620,10 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	normalized["reentry_size_schedule"] = normalizeBacktestFloatSlice(normalized["reentry_size_schedule"], domain.ResearchBaselineReentrySizeSchedule())
 	stopLossATR := parseFloatValue(normalized["stop_loss_atr"])
 	if stopLossATR <= 0 {
-		stopLossATR = 0.05
+		stopLossATR = parseFloatValue(normalized["initial_stop_atr"])
+		if stopLossATR <= 0 {
+			stopLossATR = 0.05
+		}
 	}
 	normalized["stop_loss_atr"] = stopLossATR
 	profitProtectATR := parseFloatValue(normalized["profit_protect_atr"])
@@ -635,6 +638,26 @@ func NormalizeBacktestParameters(parameters map[string]any) (map[string]any, err
 	}
 	if delayedTrailingActivationATR := parseFloatValue(normalized["delayed_trailing_activation_atr"]); delayedTrailingActivationATR > 0 {
 		normalized["delayed_trailing_activation_atr"] = delayedTrailingActivationATR
+	}
+	for _, key := range []string{
+		"initial_stop_atr",
+		"stop_buffer_atr",
+		"stop_cap_atr",
+		"min_stop_bps",
+		"breakeven_at_r",
+		"cost_lock_bps",
+		"trail_start_r",
+		"trail_buffer_atr",
+		"max_hold_hours",
+	} {
+		if _, ok := normalized[key]; !ok {
+			continue
+		}
+		if value := parseFloatValue(normalized[key]); value > 0 {
+			normalized[key] = value
+		} else {
+			delete(normalized, key)
+		}
 	}
 	if feeBps := parseFloatValue(normalized["tradingFeeBps"]); feeBps >= 0 {
 		normalized["tradingFeeBps"] = feeBps
@@ -671,6 +694,14 @@ func applyBacktestParameterAliases(parameters map[string]any) {
 		"fixedSlippage":                "fixed_slippage",
 		"trailingStopATR":              "trailing_stop_atr",
 		"delayedTrailingActivationATR": "delayed_trailing_activation_atr",
+		"initialStopATR":               "initial_stop_atr",
+		"stopBufferATR":                "stop_buffer_atr",
+		"stopCapATR":                   "stop_cap_atr",
+		"breakevenAtR":                 "breakeven_at_r",
+		"costLockBps":                  "cost_lock_bps",
+		"trailStartR":                  "trail_start_r",
+		"trailBufferATR":               "trail_buffer_atr",
+		"maxHoldHours":                 "max_hold_hours",
 		"longReentryATR":               "long_reentry_atr",
 		"shortReentryATR":              "short_reentry_atr",
 		"breakoutShape":                "breakout_shape",

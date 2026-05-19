@@ -1361,6 +1361,15 @@ func (p *Platform) resolvePaperSessionParameters(session domain.PaperSession, ve
 		"reentry_size_schedule",
 		"trailing_stop_atr",
 		"delayed_trailing_activation_atr",
+		"initial_stop_atr",
+		"stop_buffer_atr",
+		"stop_cap_atr",
+		"min_stop_bps",
+		"breakeven_at_r",
+		"cost_lock_bps",
+		"trail_start_r",
+		"trail_buffer_atr",
+		"max_hold_hours",
 		"reentry_decay_factor",
 		"max_trades_per_bar",
 		"fixed_slippage",
@@ -1423,6 +1432,8 @@ func normalizePaperSessionOverrides(overrides map[string]any) map[string]any {
 			normalized[key] = normalizeStrategyEngineKey(stringValue(value))
 		case "tradingFeeBps", "fundingRateBps", "fixed_slippage", "stop_loss_atr", "profit_protect_atr",
 			"long_reentry_atr", "short_reentry_atr", "trailing_stop_atr", "delayed_trailing_activation_atr",
+			"initial_stop_atr", "stop_buffer_atr", "stop_cap_atr", "min_stop_bps", "breakeven_at_r",
+			"cost_lock_bps", "trail_start_r", "trail_buffer_atr", "max_hold_hours",
 			"reentry_decay_factor", "min_atr_percentile", "min_sma_atr_separation":
 			normalized[key] = parseFloatValue(value)
 		case "fundingIntervalHours", "max_trades_per_bar":
