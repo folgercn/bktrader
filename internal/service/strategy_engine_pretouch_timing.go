@@ -22,7 +22,7 @@ const (
 	defaultPretouchShadowOverlayBaseShare     = 0.40
 	defaultPretouchShadowOverlaySpeedMin      = 0.35
 	pretouchShadowMaxSubmittedQuantityParam   = "pretouchShadowMaxSubmittedQuantity"
-	defaultPretouchShadowMaxSubmittedQuantity = 0.20
+	defaultPretouchShadowMaxSubmittedQuantity = 0.40
 	maxPretouchShadowLeadScale                = defaultPretouchShadowLeadScale
 	maxPretouchShadowOverlayScale             = defaultPretouchShadowOverlayScale
 	maxPretouchShadowOverlayBaseShare         = defaultPretouchShadowOverlayBaseShare

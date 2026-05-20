@@ -50,6 +50,57 @@ func TestPretouchTimingEngineAdvancePlanProducesLiveIntentMetadata(t *testing.T)
 	}
 }
 
+func TestPretouchTimingEngineAppliesRFProbabilityAndCostPenaltyToIntentQuantity(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	ctx.ExecutionContext.Parameters["pretouchCostQ50Threshold"] = 0.005
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	ctx.ExecutionContext.Parameters["pretouchCostQ50Threshold"] = 0.005
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["rfProbability"]); math.Abs(got-0.75) > 1e-9 {
+		t.Fatalf("expected RF probability 0.75, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["sizingMultiplier"]); math.Abs(got-1.5) > 1e-9 {
+		t.Fatalf("expected sizing multiplier 1.5, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["costPenalty"]); math.Abs(got-0.5) > 1e-9 {
+		t.Fatalf("expected cost penalty 0.5, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["finalPositionSize"]); math.Abs(got-0.6) > 1e-9 {
+		t.Fatalf("expected final position size 0.6, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.06) > 1e-9 {
+		t.Fatalf("expected production suggested quantity 0.06, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.06) > 1e-9 {
+		t.Fatalf("expected suggested quantity 0.06, got %v", got)
+	}
+
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected live signal intent from decision")
+	}
+	if math.Abs(intent.Quantity-0.06) > 1e-9 {
+		t.Fatalf("expected intent quantity 0.06, got %v", intent.Quantity)
+	}
+}
+
 func TestPretouchTimingEngineAddsRiskOnShadowMetadataWithoutChangingIntentQuantity(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
@@ -165,6 +216,51 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	}
 	if math.Abs(intent.Quantity-0.18) > 1e-9 {
 		t.Fatalf("expected live intent quantity to submit 1.5x lead quantity 0.18, got %v", intent.Quantity)
+	}
+}
+
+func TestPretouchTimingEngineDoesNotCapResearchMaxLeadQuantityAtPointTwo(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 1.0)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, 105.09, 105.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.16) > 1e-9 {
+		t.Fatalf("expected max RF production quantity 0.16, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.24) > 1e-9 {
+		t.Fatalf("expected research max 1.5x lead quantity 0.24, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	if boolValue(shadow["shadowLeadQuantityCapped"]) {
+		t.Fatalf("expected research max lead quantity not to be capped at 0.20: %#v", shadow)
+	}
+	if got := parseFloatValue(shadow["maxShadowSubmittedQuantity"]); math.Abs(got-0.40) > 1e-9 {
+		t.Fatalf("expected max submitted quantity 0.40, got %v in %#v", got, shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.24) > 1e-9 {
+		t.Fatalf("expected submitted quantity 0.24, got %v in %#v", got, shadow)
 	}
 }
 
