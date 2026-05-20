@@ -5420,8 +5420,18 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"pretouchShadowMode",
 		"pretouchShadowCandidateID",
 		"pretouchShadowLeadScale",
+		pretouchShadowLeadQuantityBandSizingParam,
+		"pretouchShadowLeadQuantityMinQuantity",
+		"pretouchShadowLeadQuantityMaxQuantity",
 		"pretouchShadowOverlayScale",
 		"pretouchShadowOverlayBaseShare",
+		pretouchShadowOverlayQualitySizingParam,
+		pretouchShadowOverlayQualityFallbackParam,
+		"pretouchShadowOverlayQualityMinMultiplier",
+		"pretouchShadowOverlayQualityMaxMultiplier",
+		"pretouchShadowOverlayQualityMinQuantity",
+		"pretouchShadowOverlayQualityMaxQuantity",
+		"pretouchShadowOverlayQualityCostThresholdATR",
 		"pretouchShadowOverlaySpeedThreshold",
 		"pretouchShadowOverlayMaxPreTouchSec",
 		"pretouchShadowOverlayMaxEff300s",
@@ -6008,8 +6018,15 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		"pretouchCostQ50Threshold",
 		"pretouchCostQ50Penalty",
 		"pretouchShadowLeadScale",
+		"pretouchShadowLeadQuantityMinQuantity",
+		"pretouchShadowLeadQuantityMaxQuantity",
 		"pretouchShadowOverlayScale",
 		"pretouchShadowOverlayBaseShare",
+		"pretouchShadowOverlayQualityMinMultiplier",
+		"pretouchShadowOverlayQualityMaxMultiplier",
+		"pretouchShadowOverlayQualityMinQuantity",
+		"pretouchShadowOverlayQualityMaxQuantity",
+		"pretouchShadowOverlayQualityCostThresholdATR",
 		pretouchShadowMaxSubmittedQuantityParam,
 		"pretouchShadowOverlaySpeedThreshold",
 		"pretouchShadowOverlayMaxPreTouchSec",
@@ -6030,10 +6047,18 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 				}
 			case "pretouchShadowLeadScale":
 				value = capPositiveFloat(value, maxPretouchShadowLeadScale)
+			case "pretouchShadowLeadQuantityMinQuantity", "pretouchShadowLeadQuantityMaxQuantity":
+				value = capPositiveFloat(value, maxPretouchShadowMaxSubmittedQuantity)
 			case "pretouchShadowOverlayScale":
 				value = capPositiveFloat(value, maxPretouchShadowOverlayScale)
 			case "pretouchShadowOverlayBaseShare":
 				value = capPositiveFloat(value, maxPretouchShadowOverlayBaseShare)
+			case "pretouchShadowOverlayQualityMinMultiplier":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayQualityMax)
+			case "pretouchShadowOverlayQualityMaxMultiplier":
+				value = capPositiveFloat(value, maxPretouchShadowOverlayQualityMax)
+			case "pretouchShadowOverlayQualityMinQuantity", "pretouchShadowOverlayQualityMaxQuantity":
+				value = capPositiveFloat(value, maxPretouchShadowMaxSubmittedQuantity)
 			case pretouchShadowMaxSubmittedQuantityParam:
 				value = capPositiveFloat(value, maxPretouchShadowMaxSubmittedQuantity)
 			}
@@ -6043,8 +6068,17 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	if _, ok := overrides[pretouchShadowSubmitRiskOnQuantityParam]; ok {
 		normalized[pretouchShadowSubmitRiskOnQuantityParam] = boolValue(overrides[pretouchShadowSubmitRiskOnQuantityParam])
 	}
+	if _, ok := overrides[pretouchShadowLeadQuantityBandSizingParam]; ok {
+		normalized[pretouchShadowLeadQuantityBandSizingParam] = boolValue(overrides[pretouchShadowLeadQuantityBandSizingParam])
+	}
 	if _, ok := overrides[pretouchShadowSubmitOverlayOrderParam]; ok {
 		normalized[pretouchShadowSubmitOverlayOrderParam] = boolValue(overrides[pretouchShadowSubmitOverlayOrderParam])
+	}
+	if _, ok := overrides[pretouchShadowOverlayQualitySizingParam]; ok {
+		normalized[pretouchShadowOverlayQualitySizingParam] = boolValue(overrides[pretouchShadowOverlayQualitySizingParam])
+	}
+	if _, ok := overrides[pretouchShadowOverlayQualityFallbackParam]; ok {
+		normalized[pretouchShadowOverlayQualityFallbackParam] = boolValue(overrides[pretouchShadowOverlayQualityFallbackParam])
 	}
 	return normalized
 }

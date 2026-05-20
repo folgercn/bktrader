@@ -5,7 +5,10 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
 const (
@@ -13,19 +16,31 @@ const (
 	bkLiveEthPretouchTimingStrategyID         = "strategy-bk-eth-pretouch-timing"
 	bkLiveEthPretouchTimingStrategyVersionID  = "strategy-version-bk-eth-pretouch-timing-v010"
 	defaultPretouchModelPath                  = "data/pretouch_model.json"
+	defaultPretouchT3OverlayModelPath         = "data/pretouch_t3_overlay_rf_model.json"
 	pretouchShadowModeTestnetCollect          = "testnet_shadow_collect"
 	pretouchShadowSubmitRiskOnQuantityParam   = "pretouchShadowSubmitRiskOnQuantity"
 	pretouchShadowSubmitOverlayOrderParam     = "pretouchShadowSubmitOverlayOrder"
-	defaultPretouchShadowCandidateID          = "lead_1p5_overlay_2p0_strict15_20260519"
+	pretouchShadowLeadQuantityBandSizingParam = "pretouchShadowLeadQuantityBandSizing"
+	pretouchShadowOverlayQualitySizingParam   = "pretouchShadowOverlayQualitySizing"
+	pretouchShadowOverlayQualityFallbackParam = "pretouchShadowOverlayQualityFallbackSubmit"
+	defaultPretouchShadowCandidateID          = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_20260520"
 	defaultPretouchShadowLeadScale            = 1.5
+	defaultPretouchShadowLeadQuantityMinQty   = 0.20
+	defaultPretouchShadowLeadQuantityMaxQty   = 0.40
 	defaultPretouchShadowOverlayScale         = 2.0
 	defaultPretouchShadowOverlayBaseShare     = 0.40
 	defaultPretouchShadowOverlaySpeedMin      = 0.35
+	defaultPretouchShadowOverlayQualityMin    = 2.50
+	defaultPretouchShadowOverlayQualityMax    = 5.00
+	defaultPretouchShadowOverlayQualityCost   = 0.10
+	defaultPretouchShadowOverlayQualityMinQty = 0.20
+	defaultPretouchShadowOverlayQualityMaxQty = 0.40
 	pretouchShadowMaxSubmittedQuantityParam   = "pretouchShadowMaxSubmittedQuantity"
 	defaultPretouchShadowMaxSubmittedQuantity = 0.40
 	maxPretouchShadowLeadScale                = defaultPretouchShadowLeadScale
 	maxPretouchShadowOverlayScale             = defaultPretouchShadowOverlayScale
 	maxPretouchShadowOverlayBaseShare         = defaultPretouchShadowOverlayBaseShare
+	maxPretouchShadowOverlayQualityMax        = defaultPretouchShadowOverlayQualityMax
 	maxPretouchShadowMaxSubmittedQuantity     = defaultPretouchShadowMaxSubmittedQuantity
 	defaultPretouchShadowStrict10Pct          = 35.521555
 	defaultPretouchShadowStrict15Pct          = 28.970948
@@ -37,40 +52,87 @@ const (
 // for timing classification and probability sizing, and produces signal intents.
 // No Python dependency; single Go binary.
 type bkLiveEthPretouchTimingEngine struct {
-	platform   *Platform
-	detector   *PretouchEventDetector
-	t3Detector *PretouchEventDetector
-	model      *PretouchModelBundle
-	config     PretouchDetectorConfig
+	platform    *Platform
+	detector    *PretouchEventDetector
+	t3Detector  *PretouchEventDetector
+	model       atomic.Pointer[PretouchModelBundle]
+	t3Model     atomic.Pointer[PretouchModelBundle]
+	modelPath   string
+	t3ModelPath string
+	config      PretouchDetectorConfig
 }
 
 func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimingEngine {
 	config := DefaultPretouchDetectorConfig()
 	engine := &bkLiveEthPretouchTimingEngine{
-		platform:   platform,
-		detector:   NewPretouchEventDetector("ETHUSDT", config),
-		t3Detector: NewPretouchEventDetector("ETHUSDT", config),
-		config:     config,
+		platform:    platform,
+		detector:    NewPretouchEventDetector("ETHUSDT", config),
+		t3Detector:  NewPretouchEventDetector("ETHUSDT", config),
+		modelPath:   firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_MODEL_PATH")), defaultPretouchModelPath),
+		t3ModelPath: firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH")), defaultPretouchT3OverlayModelPath),
+		config:      config,
 	}
 
 	// Try to load model bundle from default path. Deployments can override this
 	// without changing the launch template.
-	modelPath := firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_MODEL_PATH")), defaultPretouchModelPath)
-	if bundle, err := LoadModelBundle(modelPath); err == nil {
-		engine.model = bundle
+	if bundle, err := LoadModelBundle(engine.modelPath); err == nil {
+		engine.setLeadModel(bundle)
 		platform.logger("service.pretouch_timing").Info("pretouch model loaded",
+			"path", engine.modelPath,
 			"version", bundle.Version,
 			"timing_loocv", bundle.TimingLOOCV,
 			"rf_accuracy", bundle.RFAccuracy,
 		)
 	} else {
 		platform.logger("service.pretouch_timing").Warn("pretouch model not found, events will be skipped until model is trained",
-			"path", modelPath,
+			"path", engine.modelPath,
+			"error", err,
+		)
+	}
+
+	if bundle, err := LoadModelBundle(engine.t3ModelPath); err == nil {
+		engine.setT3OverlayModel(bundle)
+		platform.logger("service.pretouch_timing").Info("pretouch T3 overlay RF model loaded",
+			"path", engine.t3ModelPath,
+			"version", bundle.Version,
+			"rf_accuracy", bundle.RFAccuracy,
+		)
+	} else {
+		platform.logger("service.pretouch_timing").Warn("pretouch T3 overlay RF model not found, T3 overlay will keep fixed sizing unless the model is available",
+			"path", engine.t3ModelPath,
 			"error", err,
 		)
 	}
 
 	return engine
+}
+
+func (e *bkLiveEthPretouchTimingEngine) leadModel() *PretouchModelBundle {
+	if e == nil {
+		return nil
+	}
+	return e.model.Load()
+}
+
+func (e *bkLiveEthPretouchTimingEngine) setLeadModel(bundle *PretouchModelBundle) {
+	if e == nil {
+		return
+	}
+	e.model.Store(bundle)
+}
+
+func (e *bkLiveEthPretouchTimingEngine) t3OverlayModel() *PretouchModelBundle {
+	if e == nil {
+		return nil
+	}
+	return e.t3Model.Load()
+}
+
+func (e *bkLiveEthPretouchTimingEngine) setT3OverlayModel(bundle *PretouchModelBundle) {
+	if e == nil {
+		return
+	}
+	e.t3Model.Store(bundle)
 }
 
 func (e *bkLiveEthPretouchTimingEngine) Key() string {
@@ -85,7 +147,7 @@ func (e *bkLiveEthPretouchTimingEngine) Describe() map[string]any {
 		"supportedExecutions": []string{"tick"},
 		"runtimeConsistency":  "live-eth-pretouch-timing-unified",
 		"symbol":              "ETHUSDT",
-		"description":         "ETH pretouch timing strategy: production RF/cost sizing plus sandbox-only testnet shadow submission for lead 1.5x and T3 overlay 2.0x research candidate.",
+		"description":         "ETH pretouch timing strategy: production RF/cost sizing plus sandbox-only testnet shadow lead and T3 overlay quantity-band research candidate.",
 	}
 }
 
@@ -158,7 +220,8 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	)
 
 	// Check if model is loaded
-	if e.model == nil {
+	leadModel := e.leadModel()
+	if leadModel == nil {
 		logger.Warn("no model loaded, skipping event",
 			"event_id", result.Event.EventID,
 		)
@@ -173,20 +236,20 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	}
 
 	// Build feature vector in the order expected by the model
-	features := make([]float64, len(e.model.FeatureNames))
-	for i, name := range e.model.FeatureNames {
+	features := make([]float64, len(leadModel.FeatureNames))
+	for i, name := range leadModel.FeatureNames {
 		if val, ok := result.Event.Features[name]; ok {
 			features[i] = val
-		} else if i < len(e.model.Medians) {
-			features[i] = e.model.Medians[i] // impute with train median
+		} else if i < len(leadModel.Medians) {
+			features[i] = leadModel.Medians[i] // impute with train median
 		}
 	}
 
 	// Timing classification (DT3)
-	timingRegime := normalizePretouchTimingRegime(e.model.TimingTree.Predict(features))
+	timingRegime := normalizePretouchTimingRegime(leadModel.TimingTree.Predict(features))
 
 	// RF probability
-	rfProb := e.model.RFModel.PredictProba(features)
+	rfProb := leadModel.RFModel.PredictProba(features)
 
 	// Sizing multiplier = clip(prob × 2, 0, 2)
 	sizingMultiplier := rfProb * 2
@@ -215,7 +278,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 				"pretouchEvent": result.Event.EventID,
 				"timingRegime":  "skip",
 				"rfProbability": rfProb,
-				"modelVersion":  e.model.Version,
+				"modelVersion":  leadModel.Version,
 			},
 		}, nil
 	}
@@ -233,7 +296,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 				"pretouchEvent": result.Event.EventID,
 				"timingRegime":  timingRegime,
 				"rfProbability": rfProb,
-				"modelVersion":  e.model.Version,
+				"modelVersion":  leadModel.Version,
 			},
 		}, nil
 	}
@@ -264,7 +327,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"production_suggested_quantity", productionSuggestedQuantity,
 		"suggested_quantity", suggestedQuantity,
 		"shadow_risk_on_quantity_enabled", boolValue(mapValue(shadowSizing)["submittedRiskOnQuantityEnabled"]),
-		"model_version", e.model.Version,
+		"model_version", leadModel.Version,
 	)
 
 	currentSnapshot := pretouchBarSnapshot(currentBar)
@@ -303,7 +366,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"finalPositionSize":             finalPositionSize,
 		"productionSuggestedQuantity":   productionSuggestedQuantity,
 		"suggestedQuantity":             suggestedQuantity,
-		"modelVersion":                  e.model.Version,
+		"modelVersion":                  leadModel.Version,
 		"signalSource":                  "pretouch-timing-unified",
 		"signalBarDecision":             signalBarDecision,
 		"signalBarStateKey":             signalBarTradeLimitKey,
@@ -377,6 +440,7 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 		baseQuantity,
 		orderBookStats,
 		pretouchShadowSubmitContextFromEvaluation(ctx),
+		e.pretouchT3OverlayQualitySizing(ctx.ExecutionContext.Parameters, result.Event),
 	)
 	if overlaySizing == nil {
 		return StrategySignalDecision{}, false
@@ -533,8 +597,25 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 	leadScale := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowLeadScale"]), defaultPretouchShadowLeadScale, maxPretouchShadowLeadScale)
 	overlayScale := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayScale"]), defaultPretouchShadowOverlayScale, maxPretouchShadowOverlayScale)
 	maxSubmittedQuantity := pretouchShadowMaxSubmittedQuantity(parameters)
-	uncappedShadowLeadQuantity := productionQuantity * leadScale
-	shadowLeadQuantity := capPositiveFloat(uncappedShadowLeadQuantity, maxSubmittedQuantity)
+	legacyUncappedShadowLeadQuantity := productionQuantity * leadScale
+	legacyShadowLeadQuantity := capPositiveFloat(legacyUncappedShadowLeadQuantity, maxSubmittedQuantity)
+	uncappedShadowLeadQuantity := legacyUncappedShadowLeadQuantity
+	shadowLeadQuantity := legacyShadowLeadQuantity
+	leadQuantityBandRequested := pretouchShadowLeadQuantityBandSizingRequested(parameters)
+	leadQuantityBandEnabled := false
+	leadQuantityBandScore := 0.0
+	leadQuantityBandMinQuantity, leadQuantityBandMaxQuantity := pretouchShadowLeadQuantityBandBounds(parameters)
+	if leadQuantityBandRequested {
+		productionMaxQuantity := pretouchShadowLeadMaxProductionQuantity(parameters)
+		if productionMaxQuantity > 0 {
+			leadQuantityBandScore = pretouchClampFloat(productionQuantity/productionMaxQuantity, 0.0, 1.0)
+		} else if maxSubmittedQuantity > 0 {
+			leadQuantityBandScore = pretouchClampFloat(legacyShadowLeadQuantity/maxSubmittedQuantity, 0.0, 1.0)
+		}
+		uncappedShadowLeadQuantity = leadQuantityBandMinQuantity + leadQuantityBandScore*(leadQuantityBandMaxQuantity-leadQuantityBandMinQuantity)
+		shadowLeadQuantity = capPositiveFloat(uncappedShadowLeadQuantity, maxSubmittedQuantity)
+		leadQuantityBandEnabled = true
+	}
 	topDepthQty := pretouchTopDepthQtyForSide(side, orderBookStats)
 	currentCoverage := 0.0
 	shadowCoverage := 0.0
@@ -563,6 +644,9 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 	if riskOnEnabled {
 		submittedQuantityAfterShadow = shadowLeadQuantity
 		submittedSizingMode = "testnet_shadow_lead_scale_intent_quantity"
+		if leadQuantityBandEnabled {
+			submittedSizingMode = "testnet_shadow_lead_rf_cost_quantity_band"
+		}
 		liveSizingPromotionState = "testnet_shadow_risk_on_collect"
 	}
 
@@ -577,8 +661,15 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 		"productionSuggestedQuantity":        productionQuantity,
 		"leadScale":                          leadScale,
 		"overlayScale":                       overlayScale,
+		"leadQuantityBandRequested":          leadQuantityBandRequested,
+		"leadQuantityBandEnabled":            leadQuantityBandEnabled,
+		"leadQuantityBandMinQuantity":        leadQuantityBandMinQuantity,
+		"leadQuantityBandMaxQuantity":        leadQuantityBandMaxQuantity,
+		"leadQuantityBandScore":              leadQuantityBandScore,
 		"shadowLeadQuantity":                 shadowLeadQuantity,
 		"uncappedShadowLeadQuantity":         uncappedShadowLeadQuantity,
+		"legacyShadowLeadQuantity":           legacyShadowLeadQuantity,
+		"legacyUncappedShadowLeadQuantity":   legacyUncappedShadowLeadQuantity,
 		"shadowLeadQuantityCapped":           uncappedShadowLeadQuantity > shadowLeadQuantity,
 		"maxShadowSubmittedQuantity":         maxSubmittedQuantity,
 		"shadowLeadQuantityDelta":            shadowLeadQuantity - productionQuantity,
@@ -609,7 +700,252 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 	}
 }
 
-func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side string, baseQuantity float64, orderBookStats orderBookDecisionStats, submitContext pretouchShadowSubmitContext) map[string]any {
+func pretouchShadowLeadQuantityBandSizingRequested(parameters map[string]any) bool {
+	if _, ok := parameters[pretouchShadowLeadQuantityBandSizingParam]; !ok {
+		return false
+	}
+	return boolValue(parameters[pretouchShadowLeadQuantityBandSizingParam])
+}
+
+func pretouchShadowLeadQuantityBandBounds(parameters map[string]any) (float64, float64) {
+	minQuantity := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowLeadQuantityMinQuantity"]), defaultPretouchShadowLeadQuantityMinQty, maxPretouchShadowMaxSubmittedQuantity)
+	maxQuantity := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowLeadQuantityMaxQuantity"]), defaultPretouchShadowLeadQuantityMaxQty, maxPretouchShadowMaxSubmittedQuantity)
+	if minQuantity > maxQuantity {
+		minQuantity = maxQuantity
+	}
+	return minQuantity, maxQuantity
+}
+
+func pretouchShadowLeadMaxProductionQuantity(parameters map[string]any) float64 {
+	baseQuantity := pretouchBaseOrderQuantityFromParameters(parameters)
+	if baseQuantity <= 0 {
+		return 0
+	}
+	baseShare := firstPositive(parseFloatValue(parameters["pretouchBaseShare"]), DefaultPretouchDetectorConfig().BaseShare)
+	return baseQuantity * baseShare * 2.0
+}
+
+func (e *bkLiveEthPretouchTimingEngine) pretouchT3OverlayQualitySizing(parameters map[string]any, event domain.PretouchEvent) map[string]any {
+	if !pretouchShadowOverlayQualitySizingRequested(parameters) {
+		return nil
+	}
+	minMultiplier, maxMultiplier := pretouchShadowOverlayQualityMultiplierBounds(parameters)
+	costThresholdATR := firstPositive(
+		pretouchFiniteFloat(parseFloatValue(parameters["pretouchShadowOverlayQualityCostThresholdATR"]), 0),
+		defaultPretouchShadowOverlayQualityCost,
+	)
+	minQuantity, maxQuantity := pretouchShadowOverlayQualityQuantityBounds(parameters)
+	quality := map[string]any{
+		"requested":             true,
+		"enabled":               false,
+		"status":                "model_missing",
+		"multiplier":            1.0,
+		"minMultiplier":         minMultiplier,
+		"maxMultiplier":         maxMultiplier,
+		"quantityBandEnabled":   true,
+		"minQuantity":           minQuantity,
+		"maxQuantity":           maxQuantity,
+		"costThresholdATR":      costThresholdATR,
+		"costPenalty":           1.0,
+		"fallbackSubmitAllowed": pretouchShadowOverlayQualityFallbackSubmitAllowed(parameters),
+		"mainnetPermitted":      false,
+		"modelArtifactPath":     defaultPretouchT3OverlayModelPath,
+		"modelArtifactEnvVar":   "BK_PRETOUCH_T3_OVERLAY_MODEL_PATH",
+	}
+	t3Model := e.t3OverlayModel()
+	if t3Model == nil || t3Model.RFModel == nil {
+		return quality
+	}
+	leadModel := e.leadModel()
+	quality["modelVersion"] = t3Model.Version
+	features, featureMeta, ok := e.buildPretouchT3OverlayQualityFeatures(event, t3Model, leadModel)
+	quality["features"] = featureMeta
+	if !ok {
+		quality["status"] = "feature_build_failed"
+		return quality
+	}
+	probability := pretouchFiniteFloat(t3Model.RFModel.PredictProba(features), 0.5)
+	rawMultiplier := minMultiplier + probability*(maxMultiplier-minMultiplier)
+	linearMultiplier := pretouchClampFloat(rawMultiplier, minMultiplier, maxMultiplier)
+	costPenalty := pretouchT3OverlayQualityCostPenalty(event, costThresholdATR)
+	multiplier := pretouchClampFloat(linearMultiplier*costPenalty, minMultiplier, maxMultiplier)
+	quality["enabled"] = true
+	quality["status"] = "applied"
+	quality["probability"] = probability
+	quality["rawMultiplier"] = rawMultiplier
+	quality["linearMultiplier"] = linearMultiplier
+	quality["costPenalty"] = costPenalty
+	quality["multiplier"] = multiplier
+	return quality
+}
+
+func (e *bkLiveEthPretouchTimingEngine) buildPretouchT3OverlayQualityFeatures(event domain.PretouchEvent, t3Model, leadModel *PretouchModelBundle) ([]float64, map[string]any, bool) {
+	var featureNames []string
+	if t3Model != nil {
+		featureNames = t3Model.FeatureNames
+	}
+	features := make([]float64, len(featureNames))
+	meta := make(map[string]any, len(featureNames)+3)
+	leadProbability := 0.0
+	leadProbabilityOK := false
+	if pretouchFeatureNamesContain(featureNames, "rf_probability") {
+		leadProbability, leadProbabilityOK = e.predictPretouchLeadRFProbability(event.Features, leadModel)
+		meta["leadRFProbability"] = leadProbability
+		meta["leadRFProbabilityAvailable"] = leadProbabilityOK
+		if leadModel != nil {
+			meta["leadModelVersion"] = leadModel.Version
+		}
+		if !leadProbabilityOK {
+			meta["missingFeature"] = "rf_probability"
+			return features, meta, false
+		}
+	}
+	for i, name := range featureNames {
+		value, ok := pretouchT3OverlayFeatureValue(event, name, leadProbability)
+		if !ok {
+			if t3Model != nil && i < len(t3Model.Medians) {
+				value = t3Model.Medians[i]
+				ok = true
+				meta["imputed_"+name] = true
+			}
+		}
+		if !ok {
+			meta["missingFeature"] = name
+			return features, meta, false
+		}
+		value = float64(float32(pretouchFiniteFloat(value, 0)))
+		features[i] = value
+		meta[name] = value
+	}
+	return features, meta, true
+}
+
+func (e *bkLiveEthPretouchTimingEngine) predictPretouchLeadRFProbability(eventFeatures map[string]float64, leadModel *PretouchModelBundle) (float64, bool) {
+	if leadModel == nil || leadModel.RFModel == nil || len(leadModel.FeatureNames) == 0 {
+		return 0, false
+	}
+	features := make([]float64, len(leadModel.FeatureNames))
+	for i, name := range leadModel.FeatureNames {
+		value, ok := eventFeatures[name]
+		if !ok {
+			if i >= len(leadModel.Medians) {
+				return 0, false
+			}
+			value = leadModel.Medians[i]
+		}
+		features[i] = pretouchFiniteFloat(value, 0)
+	}
+	return pretouchFiniteFloat(leadModel.RFModel.PredictProba(features), 0.5), true
+}
+
+func pretouchT3OverlayFeatureValue(event domain.PretouchEvent, name string, leadProbability float64) (float64, bool) {
+	switch name {
+	case "rf_probability":
+		return leadProbability, true
+	case "speed_300s_abs":
+		return math.Abs(event.Speed300sATR), true
+	case "touch_extension_abs":
+		return math.Abs(event.TouchExtensionATR), true
+	case "side_is_short":
+		if strings.EqualFold(event.Side, "short") {
+			return 1.0, true
+		}
+		return 0.0, true
+	case "speed_300s_atr":
+		return event.Speed300sATR, true
+	case "touch_extension_atr":
+		return event.TouchExtensionATR, true
+	case "eff_300s":
+		return event.Eff300s, true
+	case "pre_touch_seconds":
+		return event.PreTouchSeconds, true
+	case "roundtrip_cost_atr":
+		return event.RoundtripCostATR, true
+	default:
+		if value, ok := event.Features[name]; ok {
+			return value, true
+		}
+		return 0, false
+	}
+}
+
+func pretouchFeatureNamesContain(featureNames []string, target string) bool {
+	for _, name := range featureNames {
+		if name == target {
+			return true
+		}
+	}
+	return false
+}
+
+func pretouchShadowOverlayQualitySizingRequested(parameters map[string]any) bool {
+	if _, ok := parameters[pretouchShadowOverlayQualitySizingParam]; !ok {
+		return false
+	}
+	return boolValue(parameters[pretouchShadowOverlayQualitySizingParam])
+}
+
+func pretouchShadowOverlayQualityFallbackSubmitAllowed(parameters map[string]any) bool {
+	if _, ok := parameters[pretouchShadowOverlayQualityFallbackParam]; !ok {
+		return false
+	}
+	return boolValue(parameters[pretouchShadowOverlayQualityFallbackParam])
+}
+
+func pretouchShadowOverlayQualityMultiplierBounds(parameters map[string]any) (float64, float64) {
+	minMultiplier := firstPositive(parseFloatValue(parameters["pretouchShadowOverlayQualityMinMultiplier"]), defaultPretouchShadowOverlayQualityMin)
+	maxMultiplier := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayQualityMaxMultiplier"]), defaultPretouchShadowOverlayQualityMax, maxPretouchShadowOverlayQualityMax)
+	if minMultiplier > maxMultiplier {
+		minMultiplier = maxMultiplier
+	}
+	return minMultiplier, maxMultiplier
+}
+
+func pretouchShadowOverlayQualityQuantityBounds(parameters map[string]any) (float64, float64) {
+	minQuantity := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayQualityMinQuantity"]), defaultPretouchShadowOverlayQualityMinQty, maxPretouchShadowMaxSubmittedQuantity)
+	maxQuantity := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayQualityMaxQuantity"]), defaultPretouchShadowOverlayQualityMaxQty, maxPretouchShadowMaxSubmittedQuantity)
+	if minQuantity > maxQuantity {
+		minQuantity = maxQuantity
+	}
+	return minQuantity, maxQuantity
+}
+
+func pretouchT3OverlayQualityCostPenalty(event domain.PretouchEvent, thresholdATR float64) float64 {
+	costPenalty := firstPositive(pretouchFiniteFloat(event.CostPenalty, 0), 1.0)
+	costPenalty = pretouchClampFloat(costPenalty, 0.0, 1.0)
+	cost := pretouchFiniteFloat(event.RoundtripCostATR, 0)
+	computed := 1.0
+	if cost > 0 && thresholdATR > 0 {
+		computed = pretouchClampFloat(thresholdATR/cost, 0.25, 1.0)
+	}
+	if computed < costPenalty {
+		return computed
+	}
+	return costPenalty
+}
+
+func pretouchClampFloat(value, minValue, maxValue float64) float64 {
+	value = pretouchFiniteFloat(value, minValue)
+	if maxValue < minValue {
+		maxValue = minValue
+	}
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func pretouchFiniteFloat(value, fallback float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fallback
+	}
+	return value
+}
+
+func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side string, baseQuantity float64, orderBookStats orderBookDecisionStats, submitContext pretouchShadowSubmitContext, qualitySizing map[string]any) map[string]any {
 	if !strings.EqualFold(stringValue(parameters["pretouchShadowMode"]), pretouchShadowModeTestnetCollect) {
 		return nil
 	}
@@ -617,7 +953,34 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	overlayBaseShare := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayBaseShare"]), defaultPretouchShadowOverlayBaseShare, maxPretouchShadowOverlayBaseShare)
 	maxSubmittedQuantity := pretouchShadowMaxSubmittedQuantity(parameters)
 	baseOverlayQuantity := baseQuantity * overlayBaseShare
-	uncappedShadowOverlayQuantity := baseOverlayQuantity * overlayScale
+	shadowOverlayQuantityBeforeQuality := baseOverlayQuantity * overlayScale
+	overlayQualityMultiplier := 1.0
+	overlayQualityStatus := "disabled"
+	if qualitySizing != nil {
+		overlayQualityStatus = firstNonEmpty(stringValue(qualitySizing["status"]), "unknown")
+		if boolValue(qualitySizing["enabled"]) {
+			if boolValue(qualitySizing["quantityBandEnabled"]) && shadowOverlayQuantityBeforeQuality > 0 {
+				minQuantity := firstPositive(parseFloatValue(qualitySizing["minQuantity"]), defaultPretouchShadowOverlayQualityMinQty)
+				maxQuantity := firstPositive(parseFloatValue(qualitySizing["maxQuantity"]), defaultPretouchShadowOverlayQualityMaxQty)
+				if minQuantity > maxQuantity {
+					minQuantity = maxQuantity
+				}
+				probability := pretouchClampFloat(parseFloatValue(qualitySizing["probability"]), 0.0, 1.0)
+				costPenalty := firstPositive(parseFloatValue(qualitySizing["costPenalty"]), 1.0)
+				rawQualityQuantity := minQuantity + probability*(maxQuantity-minQuantity)
+				linearQualityQuantity := pretouchClampFloat(rawQualityQuantity, minQuantity, maxQuantity)
+				qualityQuantity := pretouchClampFloat(linearQualityQuantity*costPenalty, minQuantity, maxQuantity)
+				overlayQualityMultiplier = qualityQuantity / shadowOverlayQuantityBeforeQuality
+				qualitySizing["rawQualityQuantity"] = rawQualityQuantity
+				qualitySizing["linearQualityQuantity"] = linearQualityQuantity
+				qualitySizing["qualityQuantity"] = qualityQuantity
+				qualitySizing["multiplier"] = overlayQualityMultiplier
+			} else {
+				overlayQualityMultiplier = firstPositive(parseFloatValue(qualitySizing["multiplier"]), 1.0)
+			}
+		}
+	}
+	uncappedShadowOverlayQuantity := shadowOverlayQuantityBeforeQuality * overlayQualityMultiplier
 	shadowOverlayQuantity := capPositiveFloat(uncappedShadowOverlayQuantity, maxSubmittedQuantity)
 	topDepthQty := pretouchTopDepthQtyForSide(side, orderBookStats)
 	overlayCoverage := 0.0
@@ -626,10 +989,13 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	}
 	minCoverage := firstPositive(parseFloatValue(parameters["executionEntryMinTopBookCoverage"]), 0.5)
 	maxSpreadBps := firstPositive(parseFloatValue(parameters["executionEntryMaxSpreadBps"]), 8.0)
-	overlayPass := shadowOverlayQuantity > 0 &&
+	depthPass := shadowOverlayQuantity > 0 &&
 		overlayCoverage >= minCoverage &&
 		(orderBookStats.spreadBps <= 0 || orderBookStats.spreadBps <= maxSpreadBps)
-	overlayBlockReason := pretouchShadowBlockReason(shadowOverlayQuantity, overlayCoverage, overlayCoverage, minCoverage, orderBookStats.spreadBps, maxSpreadBps)
+	depthBlockReason := pretouchShadowBlockReason(shadowOverlayQuantity, overlayCoverage, overlayCoverage, minCoverage, orderBookStats.spreadBps, maxSpreadBps)
+	qualityBlockReason := pretouchShadowOverlayQualityBlockReason(qualitySizing)
+	overlayPass := depthPass && qualityBlockReason == ""
+	overlayBlockReason := firstNonEmpty(qualityBlockReason, depthBlockReason)
 	overlayRequested := true
 	if _, ok := parameters[pretouchShadowSubmitOverlayOrderParam]; ok {
 		overlayRequested = boolValue(parameters[pretouchShadowSubmitOverlayOrderParam])
@@ -640,40 +1006,64 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	if overlayEnabled {
 		submittedOverlayQuantity = shadowOverlayQuantity
 	}
+	overlaySizingMode := "testnet_shadow_t3_overlay_scale_intent_quantity"
+	if qualitySizing != nil && boolValue(qualitySizing["enabled"]) {
+		overlaySizingMode = "testnet_shadow_t3_overlay_rf_cost_quality_quantity"
+	}
 	return map[string]any{
-		"mode":                             pretouchShadowModeTestnetCollect,
-		"candidateID":                      firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
-		"stage":                            "testnet_shadow_collect",
-		"overlayEventSource":               "t3_swing",
-		"overlaySizingMode":                "testnet_shadow_t3_overlay_scale_intent_quantity",
-		"overlayBaseShare":                 overlayBaseShare,
-		"overlayBaseQuantity":              baseOverlayQuantity,
-		"overlayScale":                     overlayScale,
-		"shadowOverlayQuantity":            shadowOverlayQuantity,
-		"uncappedShadowOverlayQuantity":    uncappedShadowOverlayQuantity,
-		"shadowOverlayQuantityCapped":      uncappedShadowOverlayQuantity > shadowOverlayQuantity,
-		"maxShadowSubmittedQuantity":       maxSubmittedQuantity,
-		"submittedOverlayQuantity":         submittedOverlayQuantity,
-		"submittedOverlayOrderRequested":   overlayRequested,
-		"submittedOverlayOrderEnabled":     overlayEnabled,
-		"submittedOverlayOrderBlockReason": overlayOrderBlockReason,
-		"overlayTopDepthCoverage":          overlayCoverage,
-		"minTopDepthCoverage":              minCoverage,
-		"maxSpreadBps":                     maxSpreadBps,
-		"spreadBps":                        orderBookStats.spreadBps,
-		"topDepthQty":                      topDepthQty,
-		"shadowPreSubmitPass":              overlayPass,
-		"shadowBlockReason":                overlayBlockReason,
-		"liveExecutionMode":                submitContext.executionMode,
-		"liveSandbox":                      submitContext.sandbox,
-		"liveSemanticsMode":                boolValueToLiveSemanticsLabel(submitContext.liveExecution),
-		"mainnetOverlayOrderPermitted":     false,
-		"researchStrict10CalendarPct":      firstPositive(parseFloatValue(parameters["pretouchShadowStrict10CalendarPct"]), defaultPretouchShadowStrict10Pct),
-		"researchStrict15CalendarPct":      firstPositive(parseFloatValue(parameters["pretouchShadowStrict15CalendarPct"]), defaultPretouchShadowStrict15Pct),
-		"researchSevere15CalendarPct":      firstPositive(parseFloatValue(parameters["pretouchShadowSevere15CalendarPct"]), defaultPretouchShadowSevere15Pct),
-		"researchLeadAdverseBaselinePct":   firstPositive(parseFloatValue(parameters["pretouchShadowLeadAdverseBaselinePct"]), 22.971648),
-		"liveSizingPromotionState":         "testnet_shadow_overlay_collect",
-		"liveSizingPromotionBlocker":       "sample_size_lt_30_or_depth_not_calibrated",
+		"mode":                               pretouchShadowModeTestnetCollect,
+		"candidateID":                        firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
+		"stage":                              "testnet_shadow_collect",
+		"overlayEventSource":                 "t3_swing",
+		"overlaySizingMode":                  overlaySizingMode,
+		"overlayBaseShare":                   overlayBaseShare,
+		"overlayBaseQuantity":                baseOverlayQuantity,
+		"overlayScale":                       overlayScale,
+		"overlayQualityStatus":               overlayQualityStatus,
+		"overlayQualityMultiplier":           overlayQualityMultiplier,
+		"shadowOverlayQuantityBeforeQuality": shadowOverlayQuantityBeforeQuality,
+		"shadowOverlayQuantity":              shadowOverlayQuantity,
+		"uncappedShadowOverlayQuantity":      uncappedShadowOverlayQuantity,
+		"shadowOverlayQuantityCapped":        uncappedShadowOverlayQuantity > shadowOverlayQuantity,
+		"maxShadowSubmittedQuantity":         maxSubmittedQuantity,
+		"submittedOverlayQuantity":           submittedOverlayQuantity,
+		"submittedOverlayOrderRequested":     overlayRequested,
+		"submittedOverlayOrderEnabled":       overlayEnabled,
+		"submittedOverlayOrderBlockReason":   overlayOrderBlockReason,
+		"overlayTopDepthCoverage":            overlayCoverage,
+		"minTopDepthCoverage":                minCoverage,
+		"maxSpreadBps":                       maxSpreadBps,
+		"spreadBps":                          orderBookStats.spreadBps,
+		"topDepthQty":                        topDepthQty,
+		"shadowPreSubmitPass":                overlayPass,
+		"shadowDepthPreSubmitPass":           depthPass,
+		"shadowBlockReason":                  overlayBlockReason,
+		"overlayQualityBlockReason":          qualityBlockReason,
+		"liveExecutionMode":                  submitContext.executionMode,
+		"liveSandbox":                        submitContext.sandbox,
+		"liveSemanticsMode":                  boolValueToLiveSemanticsLabel(submitContext.liveExecution),
+		"mainnetOverlayOrderPermitted":       false,
+		"researchStrict10CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowStrict10CalendarPct"]), defaultPretouchShadowStrict10Pct),
+		"researchStrict15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowStrict15CalendarPct"]), defaultPretouchShadowStrict15Pct),
+		"researchSevere15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowSevere15CalendarPct"]), defaultPretouchShadowSevere15Pct),
+		"researchLeadAdverseBaselinePct":     firstPositive(parseFloatValue(parameters["pretouchShadowLeadAdverseBaselinePct"]), 22.971648),
+		"liveSizingPromotionState":           "testnet_shadow_overlay_collect",
+		"liveSizingPromotionBlocker":         "sample_size_lt_30_or_depth_not_calibrated",
+		"pretouchShadowOverlayQualitySizing": cloneMetadata(qualitySizing),
+	}
+}
+
+func pretouchShadowOverlayQualityBlockReason(qualitySizing map[string]any) string {
+	if qualitySizing == nil || !boolValue(qualitySizing["requested"]) || boolValue(qualitySizing["enabled"]) || boolValue(qualitySizing["fallbackSubmitAllowed"]) {
+		return ""
+	}
+	switch firstNonEmpty(stringValue(qualitySizing["status"]), "unknown") {
+	case "model_missing":
+		return "overlay_quality_model_missing"
+	case "feature_build_failed":
+		return "overlay_quality_feature_build_failed"
+	default:
+		return "overlay_quality_not_applied"
 	}
 }
 

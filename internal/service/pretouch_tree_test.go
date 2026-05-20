@@ -116,6 +116,41 @@ func TestPretouchModelBundleRejectsFeatureMismatch(t *testing.T) {
 	}
 }
 
+func TestPretouchT3OverlayModelArtifactLoads(t *testing.T) {
+	path := filepath.Join("..", "..", "data", "pretouch_t3_overlay_rf_model.json")
+	bundle, err := LoadModelBundle(path)
+	if err != nil {
+		t.Fatalf("load T3 overlay model artifact failed: %v", err)
+	}
+	if bundle.Version != "20260520_t3_overlay_rf_cost_v1" {
+		t.Fatalf("unexpected T3 overlay model version %s", bundle.Version)
+	}
+	wantFeatures := []string{
+		"rf_probability",
+		"speed_300s_abs",
+		"eff_300s",
+		"touch_extension_abs",
+		"pre_touch_seconds",
+		"roundtrip_cost_atr",
+		"side_is_short",
+	}
+	if len(bundle.FeatureNames) != len(wantFeatures) {
+		t.Fatalf("expected %d features, got %#v", len(wantFeatures), bundle.FeatureNames)
+	}
+	for i, want := range wantFeatures {
+		if bundle.FeatureNames[i] != want {
+			t.Fatalf("expected feature %d to be %s, got %s", i, want, bundle.FeatureNames[i])
+		}
+	}
+	if bundle.RFModel == nil || len(bundle.RFModel.Trees) != 240 {
+		t.Fatalf("expected 240-tree T3 overlay RF model, got %#v", bundle.RFModel)
+	}
+	probability := bundle.RFModel.PredictProba([]float64{0.56, 0.45, 0.93, 0.04, 386, 0.10, 1})
+	if probability < 0 || probability > 1 {
+		t.Fatalf("expected bounded RF probability, got %v", probability)
+	}
+}
+
 func clonePretouchBundleForTest(bundle *PretouchModelBundle) *PretouchModelBundle {
 	data, _ := json.Marshal(bundle)
 	var out PretouchModelBundle

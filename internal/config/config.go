@@ -12,63 +12,73 @@ import (
 
 // Config 存储平台运行所需的全部配置项。
 type Config struct {
-	AppName                        string // 应用名称
-	Environment                    string // 运行环境（development / production）
-	LogLevel                       string // 日志级别（debug / info / warn / error）
-	LogFormat                      string // 日志格式（text / json）
-	LogAddSource                   bool   // 是否在日志中附带源码位置信息
-	LogDir                         string // 日志镜像落盘目录；为空时禁用日志持久化
-	LogRetentionDays               int    // 日志保留天数
-	LogMaxSizeMB                   int    // 单个日志文件滚动前的最大体积（MB）
-	HTTPAddr                       string // HTTP 监听地址
-	ProcessRole                    string // 进程角色：monolith / api / live-runner / signal-runtime-runner / notification-worker
-	StoreBackend                   string // 存储后端类型（memory / postgres）
-	AutoMigrate                    bool   // 是否在启动时自动执行数据库迁移
-	PostgresDSN                    string // PostgreSQL 连接字符串
-	RedisAddr                      string // Redis 地址
-	NATSURL                        string // NATS 消息队列地址
-	RuntimeEventBus                string // runtime event bus: nats / disabled
-	PaperTickInterval              int    // 模拟盘 Ticker 间隔（秒），默认 15
-	MinuteDataDir                  string // 1min 数据目录
-	TickDataDir                    string // tick 数据目录
-	AuthEnabled                    bool   // 是否启用 API 鉴权
-	AuthUsername                   string // 管理后台用户名
-	AuthPassword                   string // 管理后台密码
-	AuthSecret                     string // Token 签名密钥
-	AuthTokenTTLMinutes            int    // Token 有效期（分钟）
-	TradeTickFreshnessSeconds      *int   // trade tick 新鲜度阈值
-	OrderBookFreshnessSeconds      *int   // order book 新鲜度阈值
-	SignalBarFreshnessSeconds      *int   // signal bar 新鲜度阈值
-	RuntimeQuietSeconds            *int   // runtime quiet 告警阈值
-	StrategyEvaluationQuietSeconds *int   // 策略触发进入评估的静默阈值
-	LiveAccountSyncFreshnessSecs   *int   // live account 同步陈旧阈值
-	PaperStartReadinessTimeoutSecs *int   // paper 启动前 runtime readiness 等待阈值
-	TelegramEnabled                bool   // Telegram 通知是否启用
-	TelegramBotToken               string // Telegram Bot Token
-	TelegramChatID                 string // Telegram Chat ID
-	TelegramSendLevels             string // Telegram 默认发送等级（逗号分隔）
-	WSHandshakeTimeoutSeconds      *int   // WebSocket 握手超时
-	WSReadStaleTimeoutSeconds      *int   // WebSocket 读取陈旧超时
-	WSPingIntervalSeconds          *int   // WebSocket Ping 间隔
-	WSPassiveCloseTimeoutSeconds   *int   // WebSocket 被动关闭超时
-	WSReconnectBackoffs            []int  // WebSocket 普通重连退避序列
-	WSReconnectRecoveryBackoffs    []int  // WebSocket 恢复模式重连退避序列
-	RESTLimiterRPS                 *int   // Binance REST 每秒请求数限制
-	RESTLimiterBurst               *int   // Binance REST 突发限制
-	RESTBackoffSeconds             *int   // Binance REST 熔断时长
-	LiveMarketCacheTTLMinutes      *int   // 市场快照缓存有效期
-	TelegramHTTPTimeoutSeconds     *int   // Telegram HTTP 请求超时
-	BinanceRecvWindowMs            *int   // Binance 请求 RecvWindow
-	LiveSignalWarmWindowDays       *int   // 实盘信号预热窗口（天）
-	LiveFastSignalWarmWindowDays   *int   // 实盘快速信号预热窗口（天）
-	LiveMinuteWarmWindowDays       *int   // 实盘分钟数据预热窗口（天）
-	DashboardLiveSessionsPollMs    int    // 仪表盘 Live Sessions 轮询间隔 (ms)
-	DashboardPositionsPollMs       int    // 仪表盘 Positions 轮询间隔 (ms)
-	DashboardOrdersPollMs          int    // 仪表盘 Orders 轮询间隔 (ms)
-	DashboardFillsPollMs           int    // 仪表盘 Fills 轮询间隔 (ms)
-	DashboardAlertsPollMs          int    // 仪表盘 Alerts 轮询间隔 (ms)
-	DashboardNotificationsPollMs   int    // 仪表盘 Notifications 轮询间隔 (ms)
-	DashboardMonitorHealthPollMs   int    // 仪表盘 Monitor Health 轮询间隔 (ms)
+	AppName                         string // 应用名称
+	Environment                     string // 运行环境（development / production）
+	LogLevel                        string // 日志级别（debug / info / warn / error）
+	LogFormat                       string // 日志格式（text / json）
+	LogAddSource                    bool   // 是否在日志中附带源码位置信息
+	LogDir                          string // 日志镜像落盘目录；为空时禁用日志持久化
+	LogRetentionDays                int    // 日志保留天数
+	LogMaxSizeMB                    int    // 单个日志文件滚动前的最大体积（MB）
+	HTTPAddr                        string // HTTP 监听地址
+	ProcessRole                     string // 进程角色：monolith / api / live-runner / signal-runtime-runner / notification-worker
+	StoreBackend                    string // 存储后端类型（memory / postgres）
+	AutoMigrate                     bool   // 是否在启动时自动执行数据库迁移
+	PostgresDSN                     string // PostgreSQL 连接字符串
+	RedisAddr                       string // Redis 地址
+	NATSURL                         string // NATS 消息队列地址
+	RuntimeEventBus                 string // runtime event bus: nats / disabled
+	PaperTickInterval               int    // 模拟盘 Ticker 间隔（秒），默认 15
+	MinuteDataDir                   string // 1min 数据目录
+	TickDataDir                     string // tick 数据目录
+	AuthEnabled                     bool   // 是否启用 API 鉴权
+	AuthUsername                    string // 管理后台用户名
+	AuthPassword                    string // 管理后台密码
+	AuthSecret                      string // Token 签名密钥
+	AuthTokenTTLMinutes             int    // Token 有效期（分钟）
+	TradeTickFreshnessSeconds       *int   // trade tick 新鲜度阈值
+	OrderBookFreshnessSeconds       *int   // order book 新鲜度阈值
+	SignalBarFreshnessSeconds       *int   // signal bar 新鲜度阈值
+	RuntimeQuietSeconds             *int   // runtime quiet 告警阈值
+	StrategyEvaluationQuietSeconds  *int   // 策略触发进入评估的静默阈值
+	LiveAccountSyncFreshnessSecs    *int   // live account 同步陈旧阈值
+	PaperStartReadinessTimeoutSecs  *int   // paper 启动前 runtime readiness 等待阈值
+	TelegramEnabled                 bool   // Telegram 通知是否启用
+	TelegramBotToken                string // Telegram Bot Token
+	TelegramChatID                  string // Telegram Chat ID
+	TelegramSendLevels              string // Telegram 默认发送等级（逗号分隔）
+	WSHandshakeTimeoutSeconds       *int   // WebSocket 握手超时
+	WSReadStaleTimeoutSeconds       *int   // WebSocket 读取陈旧超时
+	WSPingIntervalSeconds           *int   // WebSocket Ping 间隔
+	WSPassiveCloseTimeoutSeconds    *int   // WebSocket 被动关闭超时
+	WSReconnectBackoffs             []int  // WebSocket 普通重连退避序列
+	WSReconnectRecoveryBackoffs     []int  // WebSocket 恢复模式重连退避序列
+	RESTLimiterRPS                  *int   // Binance REST 每秒请求数限制
+	RESTLimiterBurst                *int   // Binance REST 突发限制
+	RESTBackoffSeconds              *int   // Binance REST 熔断时长
+	LiveMarketCacheTTLMinutes       *int   // 市场快照缓存有效期
+	TelegramHTTPTimeoutSeconds      *int   // Telegram HTTP 请求超时
+	BinanceRecvWindowMs             *int   // Binance 请求 RecvWindow
+	LiveSignalWarmWindowDays        *int   // 实盘信号预热窗口（天）
+	LiveFastSignalWarmWindowDays    *int   // 实盘快速信号预热窗口（天）
+	LiveMinuteWarmWindowDays        *int   // 实盘分钟数据预热窗口（天）
+	DashboardLiveSessionsPollMs     int    // 仪表盘 Live Sessions 轮询间隔 (ms)
+	DashboardPositionsPollMs        int    // 仪表盘 Positions 轮询间隔 (ms)
+	DashboardOrdersPollMs           int    // 仪表盘 Orders 轮询间隔 (ms)
+	DashboardFillsPollMs            int    // 仪表盘 Fills 轮询间隔 (ms)
+	DashboardAlertsPollMs           int    // 仪表盘 Alerts 轮询间隔 (ms)
+	DashboardNotificationsPollMs    int    // 仪表盘 Notifications 轮询间隔 (ms)
+	DashboardMonitorHealthPollMs    int    // 仪表盘 Monitor Health 轮询间隔 (ms)
+	PretouchModelHotReloadEnabled   bool   // pretouch 模型文件热加载
+	PretouchModelReloadIntervalSec  int    // pretouch 模型文件热加载轮询间隔
+	PretouchModelRetrainEnabled     bool   // pretouch T2/T3 模型定时重训
+	PretouchModelRetrainIntervalSec int    // pretouch T2/T3 模型重训间隔
+	PretouchLeadRetrainEnabled      bool   // lead/T2 模型重训
+	PretouchT3RetrainEnabled        bool   // T3 overlay 模型重训
+	PretouchModelPath               string // lead/T2 模型 artifact 路径
+	PretouchLeadRetrainEventsCSV    string // lead/T2 重训事件 CSV
+	PretouchT3OverlayModelPath      string // T3 overlay 模型 artifact 路径
+	PretouchT3RetrainTradesCSV      string // T3 overlay 重训 paired trades CSV
 
 	SupervisorTargets                   []string // 只读 supervisor 采集目标，支持 name=url 或 base URL
 	SupervisorBearerToken               string   // 只读 supervisor 请求目标服务时使用的全局 Bearer token
@@ -176,6 +186,16 @@ func Load() Config {
 		DashboardAlertsPollMs:               intFromEnvWithMin("DASHBOARD_ALERTS_POLL_MS", 2000, 1000),
 		DashboardNotificationsPollMs:        intFromEnvWithMin("DASHBOARD_NOTIFICATIONS_POLL_MS", 30000, 1000),
 		DashboardMonitorHealthPollMs:        intFromEnvWithMin("DASHBOARD_MONITOR_HEALTH_POLL_MS", 2000, 1000),
+		PretouchModelHotReloadEnabled:       boolFromEnv("BK_PRETOUCH_MODEL_HOT_RELOAD_ENABLED", true),
+		PretouchModelReloadIntervalSec:      intFromEnvWithMin("BK_PRETOUCH_MODEL_RELOAD_INTERVAL_SECONDS", 30, 5),
+		PretouchModelRetrainEnabled:         boolFromEnv("BK_PRETOUCH_MODEL_RETRAIN_ENABLED", true),
+		PretouchModelRetrainIntervalSec:     intFromEnvWithMin("BK_PRETOUCH_MODEL_RETRAIN_INTERVAL_SECONDS", 86400, 3600),
+		PretouchLeadRetrainEnabled:          boolFromEnv("BK_PRETOUCH_LEAD_RETRAIN_ENABLED", true),
+		PretouchT3RetrainEnabled:            boolFromEnv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_ENABLED", true),
+		PretouchModelPath:                   getenv("BK_PRETOUCH_MODEL_PATH", "data/pretouch_model.json"),
+		PretouchLeadRetrainEventsCSV:        getenv("BK_PRETOUCH_RETRAIN_EVENTS_CSV", "research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv"),
+		PretouchT3OverlayModelPath:          getenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH", "data/pretouch_t3_overlay_rf_model.json"),
+		PretouchT3RetrainTradesCSV:          getenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_TRADES_CSV", "research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv"),
 		SupervisorTargets:                   stringSliceFromEnv("SUPERVISOR_TARGETS", nil),
 		SupervisorBearerToken:               strings.TrimSpace(os.Getenv("SUPERVISOR_BEARER_TOKEN")),
 		SupervisorPollIntervalSeconds:       intFromEnvWithMin("SUPERVISOR_POLL_INTERVAL_SECONDS", 30, 5),

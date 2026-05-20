@@ -184,11 +184,41 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadScale"]); got != defaultPretouchShadowLeadScale {
 				t.Fatalf("expected pretouchShadowLeadScale=%v, got %v", defaultPretouchShadowLeadScale, got)
 			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowLeadQuantityBandSizingParam]) {
+				t.Fatalf("expected %s=true for T2 lead quantity band sizing", pretouchShadowLeadQuantityBandSizingParam)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadQuantityMinQuantity"]); got != defaultPretouchShadowLeadQuantityMinQty {
+				t.Fatalf("expected pretouchShadowLeadQuantityMinQuantity=%v, got %v", defaultPretouchShadowLeadQuantityMinQty, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadQuantityMaxQuantity"]); got != defaultPretouchShadowLeadQuantityMaxQty {
+				t.Fatalf("expected pretouchShadowLeadQuantityMaxQuantity=%v, got %v", defaultPretouchShadowLeadQuantityMaxQty, got)
+			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayScale"]); got != defaultPretouchShadowOverlayScale {
 				t.Fatalf("expected pretouchShadowOverlayScale=%v, got %v", defaultPretouchShadowOverlayScale, got)
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayBaseShare"]); got != defaultPretouchShadowOverlayBaseShare {
 				t.Fatalf("expected pretouchShadowOverlayBaseShare=%v, got %v", defaultPretouchShadowOverlayBaseShare, got)
+			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualitySizingParam]) {
+				t.Fatalf("expected %s=true for T3 overlay RF/cost quality sizing", pretouchShadowOverlayQualitySizingParam)
+			}
+			if _, ok := item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualityFallbackParam]; !ok || boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualityFallbackParam]) {
+				t.Fatalf("expected %s=false by default to avoid fixed-overlay fallback sample pollution", pretouchShadowOverlayQualityFallbackParam)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityMinMultiplier"]); got != defaultPretouchShadowOverlayQualityMin {
+				t.Fatalf("expected pretouchShadowOverlayQualityMinMultiplier=%v, got %v", defaultPretouchShadowOverlayQualityMin, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityMaxMultiplier"]); got != defaultPretouchShadowOverlayQualityMax {
+				t.Fatalf("expected pretouchShadowOverlayQualityMaxMultiplier=%v, got %v", defaultPretouchShadowOverlayQualityMax, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityMinQuantity"]); got != defaultPretouchShadowOverlayQualityMinQty {
+				t.Fatalf("expected pretouchShadowOverlayQualityMinQuantity=%v, got %v", defaultPretouchShadowOverlayQualityMinQty, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityMaxQuantity"]); got != defaultPretouchShadowOverlayQualityMaxQty {
+				t.Fatalf("expected pretouchShadowOverlayQualityMaxQuantity=%v, got %v", defaultPretouchShadowOverlayQualityMaxQty, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityCostThresholdATR"]); got != defaultPretouchShadowOverlayQualityCost {
+				t.Fatalf("expected pretouchShadowOverlayQualityCostThresholdATR=%v, got %v", defaultPretouchShadowOverlayQualityCost, got)
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowMaxSubmittedQuantityParam]); got != defaultPretouchShadowMaxSubmittedQuantity {
 				t.Fatalf("expected %s=%v, got %v", pretouchShadowMaxSubmittedQuantityParam, defaultPretouchShadowMaxSubmittedQuantity, got)

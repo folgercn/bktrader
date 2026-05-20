@@ -4466,12 +4466,22 @@ func TestNormalizeLiveSessionOverridesIncludesPositionSizing(t *testing.T) {
 
 func TestNormalizeLiveSessionOverridesCapsPretouchShadowSizing(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
-		"pretouchShadowMode":                    pretouchShadowModeTestnetCollect,
-		"pretouchBaseOrderQuantity":             10.0,
-		"pretouchShadowLeadScale":               99.0,
-		"pretouchShadowOverlayScale":            99.0,
-		"pretouchShadowOverlayBaseShare":        9.0,
-		pretouchShadowMaxSubmittedQuantityParam: 99.0,
+		"pretouchShadowMode":                           pretouchShadowModeTestnetCollect,
+		"pretouchBaseOrderQuantity":                    10.0,
+		"pretouchShadowLeadScale":                      99.0,
+		pretouchShadowLeadQuantityBandSizingParam:      true,
+		"pretouchShadowLeadQuantityMaxQuantity":        99.0,
+		"pretouchShadowLeadQuantityMinQuantity":        0.20,
+		"pretouchShadowOverlayScale":                   99.0,
+		"pretouchShadowOverlayBaseShare":               9.0,
+		pretouchShadowOverlayQualitySizingParam:        true,
+		pretouchShadowOverlayQualityFallbackParam:      false,
+		"pretouchShadowOverlayQualityMaxMultiplier":    99.0,
+		"pretouchShadowOverlayQualityMinMultiplier":    99.0,
+		"pretouchShadowOverlayQualityMaxQuantity":      99.0,
+		"pretouchShadowOverlayQualityMinQuantity":      0.20,
+		"pretouchShadowOverlayQualityCostThresholdATR": 0.10,
+		pretouchShadowMaxSubmittedQuantityParam:        99.0,
 	})
 	if got := parseFloatValue(overrides["pretouchBaseOrderQuantity"]); got != defaultPretouchShadowMaxSubmittedQuantity {
 		t.Fatalf("expected shadow base quantity capped to %v, got %v in %#v", defaultPretouchShadowMaxSubmittedQuantity, got, overrides)
@@ -4479,11 +4489,41 @@ func TestNormalizeLiveSessionOverridesCapsPretouchShadowSizing(t *testing.T) {
 	if got := parseFloatValue(overrides["pretouchShadowLeadScale"]); got != maxPretouchShadowLeadScale {
 		t.Fatalf("expected lead scale capped to %v, got %v in %#v", maxPretouchShadowLeadScale, got, overrides)
 	}
+	if !boolValue(overrides[pretouchShadowLeadQuantityBandSizingParam]) {
+		t.Fatalf("expected %s override to be preserved", pretouchShadowLeadQuantityBandSizingParam)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowLeadQuantityMaxQuantity"]); got != maxPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected lead max quantity capped to %v, got %v in %#v", maxPretouchShadowMaxSubmittedQuantity, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowLeadQuantityMinQuantity"]); got != 0.20 {
+		t.Fatalf("expected lead min quantity 0.20, got %v in %#v", got, overrides)
+	}
 	if got := parseFloatValue(overrides["pretouchShadowOverlayScale"]); got != maxPretouchShadowOverlayScale {
 		t.Fatalf("expected overlay scale capped to %v, got %v in %#v", maxPretouchShadowOverlayScale, got, overrides)
 	}
 	if got := parseFloatValue(overrides["pretouchShadowOverlayBaseShare"]); got != maxPretouchShadowOverlayBaseShare {
 		t.Fatalf("expected overlay base share capped to %v, got %v in %#v", maxPretouchShadowOverlayBaseShare, got, overrides)
+	}
+	if !boolValue(overrides[pretouchShadowOverlayQualitySizingParam]) {
+		t.Fatalf("expected %s override to be preserved", pretouchShadowOverlayQualitySizingParam)
+	}
+	if _, ok := overrides[pretouchShadowOverlayQualityFallbackParam]; !ok || boolValue(overrides[pretouchShadowOverlayQualityFallbackParam]) {
+		t.Fatalf("expected %s=false override to be preserved, got %#v", pretouchShadowOverlayQualityFallbackParam, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityMaxMultiplier"]); got != maxPretouchShadowOverlayQualityMax {
+		t.Fatalf("expected overlay quality max capped to %v, got %v in %#v", maxPretouchShadowOverlayQualityMax, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityMinMultiplier"]); got != maxPretouchShadowOverlayQualityMax {
+		t.Fatalf("expected overlay quality min capped to %v, got %v in %#v", maxPretouchShadowOverlayQualityMax, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityMaxQuantity"]); got != maxPretouchShadowMaxSubmittedQuantity {
+		t.Fatalf("expected overlay quality max quantity capped to %v, got %v in %#v", maxPretouchShadowMaxSubmittedQuantity, got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityMinQuantity"]); got != 0.20 {
+		t.Fatalf("expected overlay quality min quantity 0.20, got %v in %#v", got, overrides)
+	}
+	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityCostThresholdATR"]); got != 0.10 {
+		t.Fatalf("expected overlay quality cost threshold 0.10, got %v in %#v", got, overrides)
 	}
 	if got := parseFloatValue(overrides[pretouchShadowMaxSubmittedQuantityParam]); got != maxPretouchShadowMaxSubmittedQuantity {
 		t.Fatalf("expected max submitted quantity capped to %v, got %v in %#v", maxPretouchShadowMaxSubmittedQuantity, got, overrides)

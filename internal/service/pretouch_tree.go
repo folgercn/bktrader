@@ -217,14 +217,21 @@ func (rf *RandomForest) Predict(features []float64) string {
 
 // PretouchModelBundle holds both timing classifier and RF model.
 type PretouchModelBundle struct {
-	TimingTree   *TreeNode     `json:"timing_tree"`
-	RFModel      *RandomForest `json:"rf_model"`
-	FeatureNames []string      `json:"feature_names"`
-	Medians      []float64     `json:"medians"` // for imputation
-	Version      string        `json:"version"`
-	TrainedAt    string        `json:"trained_at"`
-	TimingLOOCV  float64       `json:"timing_loocv,omitempty"` // legacy name; value is LOOCV accuracy
-	RFAccuracy   float64       `json:"rf_accuracy,omitempty"`
+	TimingTree     *TreeNode      `json:"timing_tree"`
+	RFModel        *RandomForest  `json:"rf_model"`
+	FeatureNames   []string       `json:"feature_names"`
+	Medians        []float64      `json:"medians"` // for imputation
+	Version        string         `json:"version"`
+	TrainedAt      string         `json:"trained_at"`
+	TimingLOOCV    float64        `json:"timing_loocv,omitempty"` // legacy name; value is LOOCV accuracy
+	RFAccuracy     float64        `json:"rf_accuracy,omitempty"`
+	ArtifactKind   string         `json:"artifact_kind,omitempty"`
+	TrainingSource string         `json:"training_source,omitempty"`
+	TrainingRows   int            `json:"training_rows,omitempty"`
+	TrainingMonths []string       `json:"training_months,omitempty"`
+	RandomState    int64          `json:"random_state,omitempty"`
+	SizingPolicy   map[string]any `json:"sizing_policy,omitempty"`
+	Target         string         `json:"target,omitempty"`
 	// Deprecated: retained only to read legacy model JSON that used rf_auc for accuracy.
 	RFAUC float64 `json:"rf_auc,omitempty"`
 }
@@ -244,6 +251,56 @@ func SaveModelBundle(bundle *PretouchModelBundle, path string) error {
 		}
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+// SaveModelBundleAtomic validates and writes the model bundle with an atomic
+// rename so hot reload never observes a partially-written JSON artifact.
+func SaveModelBundleAtomic(bundle *PretouchModelBundle, path string) error {
+	if err := validatePretouchModelBundle(bundle); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		dir = "."
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".pretouch-model-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write([]byte("\n")); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 // LoadModelBundle reads a model bundle from a JSON file.

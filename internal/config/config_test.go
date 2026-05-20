@@ -588,6 +588,44 @@ func TestLoadDashboardBrokerPollEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadPretouchModelSchedulerDefaultsAndEnvOverrides(t *testing.T) {
+	cfg := Load()
+	if !cfg.PretouchModelHotReloadEnabled || !cfg.PretouchModelRetrainEnabled {
+		t.Fatalf("expected pretouch hot reload and retrain defaults enabled, got hot=%t retrain=%t", cfg.PretouchModelHotReloadEnabled, cfg.PretouchModelRetrainEnabled)
+	}
+	if !cfg.PretouchLeadRetrainEnabled || !cfg.PretouchT3RetrainEnabled {
+		t.Fatalf("expected lead and T3 retrain defaults enabled, got lead=%t t3=%t", cfg.PretouchLeadRetrainEnabled, cfg.PretouchT3RetrainEnabled)
+	}
+	if cfg.PretouchModelReloadIntervalSec != 30 || cfg.PretouchModelRetrainIntervalSec != 86400 {
+		t.Fatalf("unexpected pretouch scheduler defaults: reload=%d retrain=%d", cfg.PretouchModelReloadIntervalSec, cfg.PretouchModelRetrainIntervalSec)
+	}
+
+	t.Setenv("BK_PRETOUCH_MODEL_HOT_RELOAD_ENABLED", "false")
+	t.Setenv("BK_PRETOUCH_MODEL_RETRAIN_INTERVAL_SECONDS", "7200")
+	t.Setenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_ENABLED", "false")
+	t.Setenv("BK_PRETOUCH_MODEL_PATH", "/models/lead.json")
+	t.Setenv("BK_PRETOUCH_RETRAIN_EVENTS_CSV", "/events/lead.csv")
+	t.Setenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH", "/models/t3.json")
+	t.Setenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_TRADES_CSV", "/events/t3.csv")
+
+	cfg = Load()
+	if cfg.PretouchModelHotReloadEnabled {
+		t.Fatal("expected hot reload env override false")
+	}
+	if cfg.PretouchModelRetrainIntervalSec != 7200 {
+		t.Fatalf("expected retrain interval override 7200, got %d", cfg.PretouchModelRetrainIntervalSec)
+	}
+	if cfg.PretouchT3RetrainEnabled {
+		t.Fatal("expected T3 retrain env override false")
+	}
+	if cfg.PretouchModelPath != "/models/lead.json" ||
+		cfg.PretouchLeadRetrainEventsCSV != "/events/lead.csv" ||
+		cfg.PretouchT3OverlayModelPath != "/models/t3.json" ||
+		cfg.PretouchT3RetrainTradesCSV != "/events/t3.csv" {
+		t.Fatalf("unexpected pretouch path overrides: %+v", cfg)
+	}
+}
+
 func TestBoolFromEnvRecognizesTruthyAndFalsyValues(t *testing.T) {
 	t.Setenv("BOOL_TRUE", "yes")
 	if !boolFromEnv("BOOL_TRUE", false) {
