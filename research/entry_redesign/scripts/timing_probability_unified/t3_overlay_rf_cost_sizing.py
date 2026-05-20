@@ -69,6 +69,9 @@ OUTPUT_DIR = (
 DEFAULT_SCORED_EVENTS = OUTPUT_DIR / "t3_probability_overlay_extended" / "t3_probability_overlay_scored_events.csv"
 DEFAULT_OUTPUT = OUTPUT_DIR / "t3_overlay_rf_cost_sizing_20260520"
 BASELINE_LEAD_ADVERSE10_PCT = 22.971648
+REFERENCE_FIXED_OVERLAY_QUANTITY = 0.08
+SHADOW_QUANTITY_MIN = 0.20
+SHADOW_QUANTITY_MAX = 0.40
 
 FEATURE_COLUMNS = [
     "rf_probability",
@@ -90,6 +93,14 @@ REQUIRED_CONTEXT_COLUMNS = {
 }
 
 
+def _path_label(path: Path | str) -> str:
+    resolved = Path(path)
+    try:
+        return str(resolved.resolve().relative_to(PROJECT_ROOT))
+    except (OSError, ValueError):
+        return str(resolved)
+
+
 @dataclass(frozen=True)
 class SizingVariant:
     """One event-level sizing rule."""
@@ -98,6 +109,9 @@ class SizingVariant:
     method: str
     max_multiplier: float = 1.0
     min_multiplier: float = 0.0
+    min_quantity: float = 0.0
+    max_quantity: float = 0.0
+    reference_quantity: float = REFERENCE_FIXED_OVERLAY_QUANTITY
     live_compatible: bool = True
     read: str = ""
 
@@ -121,6 +135,10 @@ class SizingMetrics:
     avg_event_multiplier: float
     median_event_multiplier: float
     max_event_multiplier: float
+    avg_event_quantity: float
+    median_event_quantity: float
+    min_event_quantity: float
+    max_event_quantity: float
     allocated_notional_share: float
     by_month: dict[str, float]
 
@@ -198,6 +216,20 @@ def build_variants() -> list[SizingVariant]:
                 "into a 0.75x-1.25x band, or 0.06-0.10 ETH before exchange precision."
             ),
         ),
+        SizingVariant(
+            label="wf_t3_rf_cost_quantity_0p20_0p40_shadow",
+            method="wf_t3_rf_quantity",
+            max_multiplier=SHADOW_QUANTITY_MAX / REFERENCE_FIXED_OVERLAY_QUANTITY,
+            min_multiplier=SHADOW_QUANTITY_MIN / REFERENCE_FIXED_OVERLAY_QUANTITY,
+            min_quantity=SHADOW_QUANTITY_MIN,
+            max_quantity=SHADOW_QUANTITY_MAX,
+            reference_quantity=REFERENCE_FIXED_OVERLAY_QUANTITY,
+            live_compatible=False,
+            read=(
+                "Shadow risk-on candidate: T3-specific walk-forward RF maps event probability "
+                "directly into an absolute 0.20-0.40 ETH T3 overlay quantity band."
+            ),
+        ),
     ]
 
 
@@ -226,6 +258,25 @@ def _cost_penalty(events: pd.DataFrame, threshold_atr: float) -> pd.Series:
     positive = cost > 0
     computed.loc[positive] = (float(threshold_atr) / cost.loc[positive]).clip(lower=0.25, upper=1.0)
     return pd.concat([existing, computed], axis=1).min(axis=1)
+
+
+def _variant_reference_quantity(variant: SizingVariant) -> float:
+    return float(variant.reference_quantity or REFERENCE_FIXED_OVERLAY_QUANTITY)
+
+
+def _quantity_band_from_probability(
+    probability: pd.Series | np.ndarray,
+    cost_penalty: pd.Series,
+    variant: SizingVariant,
+) -> pd.Series:
+    index = cost_penalty.index
+    probability_series = pd.Series(probability, index=index, dtype=float).clip(lower=0.0, upper=1.0)
+    min_quantity = float(variant.min_quantity or SHADOW_QUANTITY_MIN)
+    max_quantity = float(variant.max_quantity or SHADOW_QUANTITY_MAX)
+    if min_quantity > max_quantity:
+        min_quantity = max_quantity
+    raw_quantity = min_quantity + probability_series * (max_quantity - min_quantity)
+    return (raw_quantity * cost_penalty).clip(lower=min_quantity, upper=max_quantity)
 
 
 def _prepare_features(events: pd.DataFrame) -> pd.DataFrame:
@@ -380,9 +431,11 @@ def score_events_for_variant(
     scored["sizing_variant"] = variant.label
     scored["model_probability"] = np.nan
     scored["model_status"] = "not_used"
+    scored["event_quantity"] = np.nan
 
     if variant.method == "fixed":
         scored["event_multiplier"] = 1.0
+        scored["event_quantity"] = _variant_reference_quantity(variant)
         scored["model_status"] = "fixed"
         return scored
 
@@ -393,14 +446,24 @@ def score_events_for_variant(
         scored["model_probability"] = rf
         scored["event_multiplier"] = (rf * 2.0).clip(lower=variant.min_multiplier, upper=variant.max_multiplier) * cost
         scored["event_multiplier"] = scored["event_multiplier"].clip(lower=variant.min_multiplier, upper=variant.max_multiplier)
+        scored["event_quantity"] = scored["event_multiplier"] * _variant_reference_quantity(variant)
         scored["model_status"] = "frozen_lead_rf"
         return scored
 
-    if variant.method not in {"wf_t3_rf_linear", "wf_t3_rf_rank"}:
+    if variant.method not in {"wf_t3_rf_linear", "wf_t3_rf_rank", "wf_t3_rf_quantity"}:
         raise ValueError(f"unknown sizing method: {variant.method}")
 
-    scored["event_multiplier"] = 1.0
-    scored["model_status"] = "warmup_fixed"
+    if variant.method == "wf_t3_rf_quantity":
+        warmup_probability = pd.Series(0.5, index=scored.index, dtype=float)
+        warmup_quantity = _quantity_band_from_probability(warmup_probability, cost, variant)
+        scored["model_probability"] = warmup_probability
+        scored["event_quantity"] = warmup_quantity
+        scored["event_multiplier"] = warmup_quantity / _variant_reference_quantity(variant)
+        scored["model_status"] = "warmup_mid_quantity"
+    else:
+        scored["event_multiplier"] = 1.0
+        scored["event_quantity"] = _variant_reference_quantity(variant)
+        scored["model_status"] = "warmup_fixed"
     for month in months:
         month_mask = scored["event_month"] == month
         if not month_mask.any():
@@ -420,6 +483,13 @@ def score_events_for_variant(
         if variant.method == "wf_t3_rf_linear":
             multiplier = pd.Series(current_prob * 2.0, index=current.index)
             multiplier = multiplier.clip(lower=variant.min_multiplier, upper=variant.max_multiplier) * month_cost
+            multiplier = multiplier.clip(lower=variant.min_multiplier, upper=variant.max_multiplier)
+            scored.loc[month_mask, "event_multiplier"] = multiplier
+            scored.loc[month_mask, "event_quantity"] = multiplier * _variant_reference_quantity(variant)
+        elif variant.method == "wf_t3_rf_quantity":
+            quantity = _quantity_band_from_probability(current_prob, month_cost, variant)
+            scored.loc[month_mask, "event_quantity"] = quantity
+            scored.loc[month_mask, "event_multiplier"] = quantity / _variant_reference_quantity(variant)
         else:
             q40 = float(np.quantile(train_prob, 0.40))
             q60 = float(np.quantile(train_prob, 0.60))
@@ -427,21 +497,21 @@ def score_events_for_variant(
             multiplier.loc[current_prob < q40] = 0.0
             multiplier.loc[(current_prob >= q40) & (current_prob < q60)] = 0.5
             multiplier = multiplier.clip(lower=variant.min_multiplier, upper=variant.max_multiplier) * month_cost
-        scored.loc[month_mask, "event_multiplier"] = multiplier.clip(
-            lower=variant.min_multiplier,
-            upper=variant.max_multiplier,
-        )
+            multiplier = multiplier.clip(lower=variant.min_multiplier, upper=variant.max_multiplier)
+            scored.loc[month_mask, "event_multiplier"] = multiplier
+            scored.loc[month_mask, "event_quantity"] = multiplier * _variant_reference_quantity(variant)
     return scored
 
 
 def apply_event_scores_to_trades(trades: pd.DataFrame, event_scores: pd.DataFrame, *, initial_balance: float) -> pd.DataFrame:
     scored = trades.merge(
-        event_scores[["external_event_key", "event_multiplier", "model_probability", "model_status"]],
+        event_scores[["external_event_key", "event_multiplier", "event_quantity", "model_probability", "model_status"]],
         on="external_event_key",
         how="left",
         validate="m:1",
     )
     scored["event_multiplier"] = _numeric(scored, "event_multiplier", 1.0)
+    scored["event_quantity"] = _numeric(scored, "event_quantity", REFERENCE_FIXED_OVERLAY_QUANTITY)
     scored["weighted_pnl_pct"] = _numeric(scored, "pnl_initial_pct") * scored["event_multiplier"]
     scored["weighted_notional_share"] = _numeric(scored, "notional") / float(initial_balance) * scored["event_multiplier"]
     scored["entry_time"] = pd.to_datetime(scored["entry_time"], utc=True)
@@ -463,6 +533,7 @@ def summarize_variant(
     by_month = _month_grid(months, monthly)
     calendar_sum = round(float(sum(by_month.values())), 6)
     event_multipliers = pd.to_numeric(event_scores["event_multiplier"], errors="coerce").fillna(0.0)
+    event_quantities = pd.to_numeric(event_scores["event_quantity"], errors="coerce").fillna(0.0)
     return SizingMetrics(
         variant=variant.label,
         method=variant.method,
@@ -479,6 +550,10 @@ def summarize_variant(
         avg_event_multiplier=round(float(event_multipliers.mean()), 6) if len(event_multipliers) else 0.0,
         median_event_multiplier=round(float(event_multipliers.median()), 6) if len(event_multipliers) else 0.0,
         max_event_multiplier=round(float(event_multipliers.max()), 6) if len(event_multipliers) else 0.0,
+        avg_event_quantity=round(float(event_quantities.mean()), 6) if len(event_quantities) else 0.0,
+        median_event_quantity=round(float(event_quantities.median()), 6) if len(event_quantities) else 0.0,
+        min_event_quantity=round(float(event_quantities.min()), 6) if len(event_quantities) else 0.0,
+        max_event_quantity=round(float(event_quantities.max()), 6) if len(event_quantities) else 0.0,
         allocated_notional_share=round(float(trades["weighted_notional_share"].sum()), 6) if not trades.empty else 0.0,
         by_month=by_month,
     )
@@ -488,8 +563,8 @@ def _markdown_table(metrics: list[SizingMetrics]) -> str:
     if not metrics:
         return "_empty_"
     lines = [
-        "| Variant | Live-compatible | Overlay PnL | Delta vs fixed | Lead adverse10 + overlay | Worst Month | Neg Months | DD | Events | Avg Mult | Read |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Variant | Live-compatible | Overlay PnL | Delta vs fixed | Lead adverse10 + overlay | Worst Month | Neg Months | DD | Events | Avg Mult | Avg Qty | Max Qty | Read |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     reads = {variant.label: variant.read for variant in build_variants()}
     for row in metrics:
@@ -503,6 +578,8 @@ def _markdown_table(metrics: list[SizingMetrics]) -> str:
             f"| {row.max_drawdown_pct:.6f}% "
             f"| {row.active_events} "
             f"| {row.avg_event_multiplier:.6f} "
+            f"| {row.avg_event_quantity:.6f} "
+            f"| {row.max_event_quantity:.6f} "
             f"| {reads.get(row.variant, '')} |"
         )
     return "\n".join(lines)
@@ -558,9 +635,13 @@ def write_outputs(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     cached_base_trades = output_dir / "t3_overlay_rf_cost_base_trades.csv"
-    overlay_trades_source = ""
-    if overlay_trades is not None and overlay_trades.resolve() != cached_base_trades.resolve():
-        overlay_trades_source = str(overlay_trades)
+    overlay_trades_source = "replayed in this run"
+    if overlay_trades is not None:
+        overlay_trades_source = (
+            "cached base trades in output dir"
+            if overlay_trades.resolve() == cached_base_trades.resolve()
+            else _path_label(overlay_trades)
+        )
     base_trades.to_csv(output_dir / "t3_overlay_rf_cost_base_trades.csv", index=False)
     event_scores.to_csv(output_dir / "t3_overlay_rf_cost_event_scores.csv", index=False)
     weighted_trades.to_csv(output_dir / "t3_overlay_rf_cost_weighted_trades.csv", index=False)
@@ -569,7 +650,7 @@ def write_outputs(
             "Research-only T3 overlay event-level RF/cost sizing audit. The base lifecycle event source, "
             "entry mode, and exit contract are fixed; variants change only notional multiplier."
         ),
-        "scored_events": str(scored_events),
+        "scored_events": _path_label(scored_events),
         "overlay_trades_input": overlay_trades_source,
         "months": months,
         "cost_threshold_atr": float(cost_threshold_atr),
@@ -585,10 +666,8 @@ def write_outputs(
         "",
         "Research-only audit for applying event-level RF/cost sizing to the current ETH T3 overlay.",
         "",
-        f"- Scored events: `{scored_events}`",
-        f"- Overlay trades input: `{overlay_trades_source}`"
-        if overlay_trades_source
-        else "- Overlay trades input: replayed in this run",
+        f"- Scored events: `{_path_label(scored_events)}`",
+        f"- Overlay trades input: `{overlay_trades_source}`",
         f"- Months: {', '.join(months)}",
         f"- Cost threshold ATR: `{cost_threshold_atr}`",
         f"- Baseline lead adverse10: `{BASELINE_LEAD_ADVERSE10_PCT:.6f}%`",
@@ -605,8 +684,8 @@ def write_outputs(
         "",
         "- `fixed_overlay_2p0` is the current T3 overlay sizing reference.",
         "- `live-compatible=true` rows never exceed the current fixed 2.0x overlay notional; they can only downweight events.",
-        "- `shadow` rows intentionally exceed the current fixed overlay notional but stay inside the 0.06-0.10 ETH testnet-shadow sizing band when the current base quantity is 0.10 ETH.",
-        "- The frozen-lead-RF shadow row can be wired with the already-loaded Go model, but the stronger T3-WF-RF row needs a T3-specific model artifact before live/testnet wiring.",
+        "- `shadow` rows intentionally exceed the current fixed overlay notional; the promoted risk-on row maps RF/cost quality into a 0.20-0.40 ETH testnet-shadow quantity band.",
+        "- The T3-WF-RF quantity-band row is walk-forward evidence. Live/testnet wiring uses a separate accumulated-history T3 model artifact and must be monitored as shadow telemetry before mainnet consideration.",
         "- A promoted variant should beat fixed overlay PnL without making worst-month or drawdown materially worse.",
     ]
     (output_dir / "t3_overlay_rf_cost_sizing_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

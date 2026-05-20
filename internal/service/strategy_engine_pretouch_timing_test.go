@@ -187,8 +187,8 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
 		t.Fatalf("expected production suggested quantity 0.12, got %v", got)
 	}
-	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.18) > 1e-9 {
-		t.Fatalf("expected submitted suggested quantity to use 1.5x lead size 0.18, got %v", got)
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.35) > 1e-9 {
+		t.Fatalf("expected submitted suggested quantity to use lead quantity band size 0.35, got %v", got)
 	}
 	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
 	if shadow == nil {
@@ -203,8 +203,14 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	if got := parseFloatValue(shadow["submittedQuantityBeforeShadow"]); math.Abs(got-0.12) > 1e-9 {
 		t.Fatalf("expected before-shadow quantity 0.12, got %v in %#v", got, shadow)
 	}
-	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.18) > 1e-9 {
-		t.Fatalf("expected after-shadow quantity 0.18, got %v in %#v", got, shadow)
+	if got := stringValue(shadow["submittedSizingMode"]); got != "testnet_shadow_lead_rf_cost_quantity_band" {
+		t.Fatalf("expected lead quantity band sizing mode, got %s in %#v", got, shadow)
+	}
+	if got := parseFloatValue(shadow["leadQuantityBandScore"]); math.Abs(got-0.75) > 1e-9 {
+		t.Fatalf("expected lead quantity band score 0.75, got %v in %#v", got, shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.35) > 1e-9 {
+		t.Fatalf("expected after-shadow quantity 0.35, got %v in %#v", got, shadow)
 	}
 	if got := stringValue(shadow["submittedRiskOnQuantityBlockReason"]); got != "" {
 		t.Fatalf("expected no risk-on block reason, got %s in %#v", got, shadow)
@@ -214,12 +220,12 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	if intent == nil {
 		t.Fatalf("expected live signal intent from decision")
 	}
-	if math.Abs(intent.Quantity-0.18) > 1e-9 {
-		t.Fatalf("expected live intent quantity to submit 1.5x lead quantity 0.18, got %v", intent.Quantity)
+	if math.Abs(intent.Quantity-0.35) > 1e-9 {
+		t.Fatalf("expected live intent quantity to submit lead quantity band size 0.35, got %v", intent.Quantity)
 	}
 }
 
-func TestPretouchTimingEngineDoesNotCapResearchMaxLeadQuantityAtPointTwo(t *testing.T) {
+func TestPretouchTimingEngineMapsMaxRiskOnLeadQuantityToPointFour(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 1.0)
 	ctx := testPretouchSignalContext(start, 101)
@@ -246,21 +252,21 @@ func TestPretouchTimingEngineDoesNotCapResearchMaxLeadQuantityAtPointTwo(t *test
 	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.16) > 1e-9 {
 		t.Fatalf("expected max RF production quantity 0.16, got %v", got)
 	}
-	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.24) > 1e-9 {
-		t.Fatalf("expected research max 1.5x lead quantity 0.24, got %v", got)
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.40) > 1e-9 {
+		t.Fatalf("expected max RF lead quantity band size 0.40, got %v", got)
 	}
 	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
 	if shadow == nil {
 		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
 	}
 	if boolValue(shadow["shadowLeadQuantityCapped"]) {
-		t.Fatalf("expected research max lead quantity not to be capped at 0.20: %#v", shadow)
+		t.Fatalf("expected max lead quantity band not to be capped below 0.40: %#v", shadow)
 	}
 	if got := parseFloatValue(shadow["maxShadowSubmittedQuantity"]); math.Abs(got-0.40) > 1e-9 {
 		t.Fatalf("expected max submitted quantity 0.40, got %v in %#v", got, shadow)
 	}
-	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.24) > 1e-9 {
-		t.Fatalf("expected submitted quantity 0.24, got %v in %#v", got, shadow)
+	if got := parseFloatValue(shadow["submittedQuantityAfterShadow"]); math.Abs(got-0.40) > 1e-9 {
+		t.Fatalf("expected submitted quantity 0.40, got %v in %#v", got, shadow)
 	}
 }
 
@@ -455,6 +461,103 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	}
 }
 
+func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	engine.t3Model = testPretouchT3OverlayQualityModel()
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected T3 overlay advance-plan, got %#v", decision)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.38) > 1e-9 {
+		t.Fatalf("expected T3 overlay RF quality quantity 0.38, got %v", got)
+	}
+	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
+	if overlay == nil {
+		t.Fatalf("expected pretouchShadowOverlaySizing metadata: %#v", decision.Metadata)
+	}
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_rf_cost_quality_quantity" {
+		t.Fatalf("expected RF quality sizing mode, got %s in %#v", got, overlay)
+	}
+	if got := parseFloatValue(overlay["shadowOverlayQuantityBeforeQuality"]); math.Abs(got-0.08) > 1e-9 {
+		t.Fatalf("expected pre-quality overlay quantity 0.08, got %v in %#v", got, overlay)
+	}
+	if got := parseFloatValue(overlay["overlayQualityMultiplier"]); math.Abs(got-4.75) > 1e-9 {
+		t.Fatalf("expected quality multiplier 4.75, got %v in %#v", got, overlay)
+	}
+	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])
+	if !boolValue(quality["enabled"]) || stringValue(quality["status"]) != "applied" {
+		t.Fatalf("expected applied quality sizing metadata, got %#v", quality)
+	}
+	if got := parseFloatValue(quality["qualityQuantity"]); math.Abs(got-0.38) > 1e-9 {
+		t.Fatalf("expected T3 quality quantity 0.38, got %v in %#v", got, quality)
+	}
+	if got := parseFloatValue(quality["minQuantity"]); math.Abs(got-0.20) > 1e-9 {
+		t.Fatalf("expected T3 quality min quantity 0.20, got %v in %#v", got, quality)
+	}
+	if got := parseFloatValue(quality["maxQuantity"]); math.Abs(got-0.40) > 1e-9 {
+		t.Fatalf("expected T3 quality max quantity 0.40, got %v in %#v", got, quality)
+	}
+	if got := parseFloatValue(quality["probability"]); math.Abs(got-0.90) > 1e-9 {
+		t.Fatalf("expected T3 model probability 0.90, got %v in %#v", got, quality)
+	}
+	features := mapValue(quality["features"])
+	if got := parseFloatValue(features["leadRFProbability"]); math.Abs(got-0.75) > 1e-9 {
+		t.Fatalf("expected lead RF feature 0.75, got %v in %#v", got, features)
+	}
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil || math.Abs(intent.Quantity-0.38) > 1e-9 {
+		t.Fatalf("expected RF quality intent quantity 0.38, got %#v", intent)
+	}
+}
+
+func TestPretouchTimingEngineFallsBackWhenT3OverlayQualityModelMissing(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	engine.t3Model = nil
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected fixed fallback T3 overlay advance-plan, got %#v", decision)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.08) > 1e-9 {
+		t.Fatalf("expected fixed T3 overlay fallback quantity 0.08, got %v", got)
+	}
+	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
+	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])
+	if boolValue(quality["enabled"]) || stringValue(quality["status"]) != "model_missing" {
+		t.Fatalf("expected model_missing quality metadata, got %#v", quality)
+	}
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_scale_intent_quantity" {
+		t.Fatalf("expected fixed overlay sizing mode on model missing, got %s", got)
+	}
+}
+
 func TestPretouchTimingEngineBlocksT3OverlayOutsideSandbox(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
@@ -509,6 +612,7 @@ func TestPretouchShadowOverlaySizingBlocksWhenScaledTopDepthIsTooThin(t *testing
 			sandbox:       true,
 			executionMode: "rest",
 		},
+		nil,
 	)
 	if overlay == nil {
 		t.Fatal("expected overlay sizing metadata")
@@ -599,6 +703,7 @@ func TestPretouchShadowOverlaySizingCapsOversizedOverlayQuantity(t *testing.T) {
 			sandbox:       true,
 			executionMode: "rest",
 		},
+		nil,
 	)
 	if overlay == nil {
 		t.Fatal("expected overlay sizing metadata")
@@ -892,6 +997,35 @@ func testPretouchTimingEngine(timingRegime string, rfProba float64) *bkLiveEthPr
 	}
 }
 
+func testPretouchT3OverlayQualityModel() *PretouchModelBundle {
+	return &PretouchModelBundle{
+		TimingTree: &TreeNode{FeatureIndex: -1, LeafValue: "fast", LeafProba: 1},
+		RFModel: &RandomForest{
+			Trees: []*TreeNode{
+				{
+					FeatureIndex: 0,
+					Threshold:    0.5,
+					Left:         &TreeNode{FeatureIndex: -1, LeafValue: "0", LeafProba: 0.20},
+					Right:        &TreeNode{FeatureIndex: -1, LeafValue: "1", LeafProba: 0.90},
+				},
+			},
+			NEstimators: 1,
+		},
+		FeatureNames: []string{
+			"rf_probability",
+			"speed_300s_abs",
+			"eff_300s",
+			"touch_extension_abs",
+			"pre_touch_seconds",
+			"roundtrip_cost_atr",
+			"side_is_short",
+		},
+		Medians:    []float64{0.5, 0.35, 1.0, 0.0, 300.0, 0.10, 0.0},
+		Version:    "test-t3-overlay-rf",
+		RFAccuracy: 0.7,
+	}
+}
+
 func testPretouchSignalContext(eventTime time.Time, price float64) StrategySignalEvaluationContext {
 	currentStart := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	return StrategySignalEvaluationContext{
@@ -1059,6 +1193,9 @@ func testPretouchExitSignalBarStates(currentStart time.Time, closePrice float64)
 func enablePretouchRiskOnShadow(ctx *StrategySignalEvaluationContext, sandbox bool) {
 	ctx.ExecutionContext.Parameters["pretouchShadowMode"] = pretouchShadowModeTestnetCollect
 	ctx.ExecutionContext.Parameters["pretouchShadowLeadScale"] = 1.5
+	ctx.ExecutionContext.Parameters[pretouchShadowLeadQuantityBandSizingParam] = true
+	ctx.ExecutionContext.Parameters["pretouchShadowLeadQuantityMinQuantity"] = defaultPretouchShadowLeadQuantityMinQty
+	ctx.ExecutionContext.Parameters["pretouchShadowLeadQuantityMaxQuantity"] = defaultPretouchShadowLeadQuantityMaxQty
 	ctx.ExecutionContext.Parameters["pretouchShadowOverlayScale"] = 2.0
 	ctx.ExecutionContext.Parameters["pretouchShadowOverlayBaseShare"] = 0.40
 	ctx.ExecutionContext.Parameters["pretouchShadowOverlaySpeedThreshold"] = 0.35

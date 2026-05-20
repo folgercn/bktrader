@@ -135,3 +135,42 @@ def test_frozen_rf_cost_sizing_downweights_low_rf_high_cost_event():
     assert multipliers["event-b"] == pytest.approx(0.30)
     assert metrics.calendar_sum_pct == pytest.approx(0.34)
     assert metrics.overlay_delta_vs_fixed_pct == pytest.approx(0.14)
+
+
+def test_wf_quantity_band_keeps_warmup_inside_absolute_shadow_bounds():
+    events = sizing.build_event_table(_trades(), initial_balance=100000.0)
+    variant = sizing.SizingVariant(
+        label="quantity",
+        method="wf_t3_rf_quantity",
+        min_multiplier=2.5,
+        max_multiplier=5.0,
+        min_quantity=0.20,
+        max_quantity=0.40,
+        reference_quantity=0.08,
+        live_compatible=False,
+    )
+
+    scored = sizing.score_events_for_variant(
+        events,
+        variant,
+        months=["2026-01"],
+        cost_threshold_atr=0.10,
+        random_state=42,
+    )
+    weighted = sizing.apply_event_scores_to_trades(_trades(), scored, initial_balance=100000.0)
+    metrics = sizing.summarize_variant(
+        variant=variant,
+        trades=weighted,
+        event_scores=scored,
+        months=["2026-01"],
+        fixed_overlay_pct=0.20,
+    )
+
+    quantities = dict(zip(scored["external_event_key"], scored["event_quantity"]))
+    multipliers = dict(zip(scored["external_event_key"], scored["event_multiplier"]))
+    assert quantities["event-a"] == pytest.approx(0.30)
+    assert quantities["event-b"] == pytest.approx(0.20)
+    assert multipliers["event-a"] == pytest.approx(3.75)
+    assert multipliers["event-b"] == pytest.approx(2.50)
+    assert metrics.calendar_sum_pct == pytest.approx(1.0)
+    assert metrics.avg_event_quantity == pytest.approx(0.25)
