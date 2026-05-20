@@ -202,6 +202,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualitySizingParam]) {
 				t.Fatalf("expected %s=true for T3 overlay RF/cost quality sizing", pretouchShadowOverlayQualitySizingParam)
 			}
+			if _, ok := item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualityFallbackParam]; !ok || boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowOverlayQualityFallbackParam]) {
+				t.Fatalf("expected %s=false by default to avoid fixed-overlay fallback sample pollution", pretouchShadowOverlayQualityFallbackParam)
+			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlayQualityMinMultiplier"]); got != defaultPretouchShadowOverlayQualityMin {
 				t.Fatalf("expected pretouchShadowOverlayQualityMinMultiplier=%v, got %v", defaultPretouchShadowOverlayQualityMin, got)
 			}

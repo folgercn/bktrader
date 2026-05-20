@@ -287,6 +287,7 @@ func NewStore() *Store {
 			"pretouchShadowOverlayScale":                   2.0,
 			"pretouchShadowOverlayBaseShare":               0.40,
 			"pretouchShadowOverlayQualitySizing":           true,
+			"pretouchShadowOverlayQualityFallbackSubmit":   false,
 			"pretouchShadowOverlayQualityMinMultiplier":    2.50,
 			"pretouchShadowOverlayQualityMaxMultiplier":    5.00,
 			"pretouchShadowOverlayQualityMinQuantity":      0.20,

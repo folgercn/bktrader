@@ -4475,6 +4475,7 @@ func TestNormalizeLiveSessionOverridesCapsPretouchShadowSizing(t *testing.T) {
 		"pretouchShadowOverlayScale":                   99.0,
 		"pretouchShadowOverlayBaseShare":               9.0,
 		pretouchShadowOverlayQualitySizingParam:        true,
+		pretouchShadowOverlayQualityFallbackParam:      false,
 		"pretouchShadowOverlayQualityMaxMultiplier":    99.0,
 		"pretouchShadowOverlayQualityMinMultiplier":    99.0,
 		"pretouchShadowOverlayQualityMaxQuantity":      99.0,
@@ -4505,6 +4506,9 @@ func TestNormalizeLiveSessionOverridesCapsPretouchShadowSizing(t *testing.T) {
 	}
 	if !boolValue(overrides[pretouchShadowOverlayQualitySizingParam]) {
 		t.Fatalf("expected %s override to be preserved", pretouchShadowOverlayQualitySizingParam)
+	}
+	if _, ok := overrides[pretouchShadowOverlayQualityFallbackParam]; !ok || boolValue(overrides[pretouchShadowOverlayQualityFallbackParam]) {
+		t.Fatalf("expected %s=false override to be preserved, got %#v", pretouchShadowOverlayQualityFallbackParam, overrides)
 	}
 	if got := parseFloatValue(overrides["pretouchShadowOverlayQualityMaxMultiplier"]); got != maxPretouchShadowOverlayQualityMax {
 		t.Fatalf("expected overlay quality max capped to %v, got %v in %#v", maxPretouchShadowOverlayQualityMax, got, overrides)

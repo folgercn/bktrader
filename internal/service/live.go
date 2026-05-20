@@ -5426,6 +5426,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"pretouchShadowOverlayScale",
 		"pretouchShadowOverlayBaseShare",
 		pretouchShadowOverlayQualitySizingParam,
+		pretouchShadowOverlayQualityFallbackParam,
 		"pretouchShadowOverlayQualityMinMultiplier",
 		"pretouchShadowOverlayQualityMaxMultiplier",
 		"pretouchShadowOverlayQualityMinQuantity",
@@ -6075,6 +6076,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if _, ok := overrides[pretouchShadowOverlayQualitySizingParam]; ok {
 		normalized[pretouchShadowOverlayQualitySizingParam] = boolValue(overrides[pretouchShadowOverlayQualitySizingParam])
+	}
+	if _, ok := overrides[pretouchShadowOverlayQualityFallbackParam]; ok {
+		normalized[pretouchShadowOverlayQualityFallbackParam] = boolValue(overrides[pretouchShadowOverlayQualityFallbackParam])
 	}
 	return normalized
 }

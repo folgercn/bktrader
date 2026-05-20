@@ -21,6 +21,7 @@ const (
 	pretouchShadowSubmitOverlayOrderParam     = "pretouchShadowSubmitOverlayOrder"
 	pretouchShadowLeadQuantityBandSizingParam = "pretouchShadowLeadQuantityBandSizing"
 	pretouchShadowOverlayQualitySizingParam   = "pretouchShadowOverlayQualitySizing"
+	pretouchShadowOverlayQualityFallbackParam = "pretouchShadowOverlayQualityFallbackSubmit"
 	defaultPretouchShadowCandidateID          = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_20260520"
 	defaultPretouchShadowLeadScale            = 1.5
 	defaultPretouchShadowLeadQuantityMinQty   = 0.20
@@ -702,20 +703,21 @@ func (e *bkLiveEthPretouchTimingEngine) pretouchT3OverlayQualitySizing(parameter
 	)
 	minQuantity, maxQuantity := pretouchShadowOverlayQualityQuantityBounds(parameters)
 	quality := map[string]any{
-		"requested":           true,
-		"enabled":             false,
-		"status":              "model_missing",
-		"multiplier":          1.0,
-		"minMultiplier":       minMultiplier,
-		"maxMultiplier":       maxMultiplier,
-		"quantityBandEnabled": true,
-		"minQuantity":         minQuantity,
-		"maxQuantity":         maxQuantity,
-		"costThresholdATR":    costThresholdATR,
-		"costPenalty":         1.0,
-		"mainnetPermitted":    false,
-		"modelArtifactPath":   defaultPretouchT3OverlayModelPath,
-		"modelArtifactEnvVar": "BK_PRETOUCH_T3_OVERLAY_MODEL_PATH",
+		"requested":             true,
+		"enabled":               false,
+		"status":                "model_missing",
+		"multiplier":            1.0,
+		"minMultiplier":         minMultiplier,
+		"maxMultiplier":         maxMultiplier,
+		"quantityBandEnabled":   true,
+		"minQuantity":           minQuantity,
+		"maxQuantity":           maxQuantity,
+		"costThresholdATR":      costThresholdATR,
+		"costPenalty":           1.0,
+		"fallbackSubmitAllowed": pretouchShadowOverlayQualityFallbackSubmitAllowed(parameters),
+		"mainnetPermitted":      false,
+		"modelArtifactPath":     defaultPretouchT3OverlayModelPath,
+		"modelArtifactEnvVar":   "BK_PRETOUCH_T3_OVERLAY_MODEL_PATH",
 	}
 	if e == nil || e.t3Model == nil || e.t3Model.RFModel == nil {
 		return quality
@@ -844,6 +846,13 @@ func pretouchShadowOverlayQualitySizingRequested(parameters map[string]any) bool
 	return boolValue(parameters[pretouchShadowOverlayQualitySizingParam])
 }
 
+func pretouchShadowOverlayQualityFallbackSubmitAllowed(parameters map[string]any) bool {
+	if _, ok := parameters[pretouchShadowOverlayQualityFallbackParam]; !ok {
+		return false
+	}
+	return boolValue(parameters[pretouchShadowOverlayQualityFallbackParam])
+}
+
 func pretouchShadowOverlayQualityMultiplierBounds(parameters map[string]any) (float64, float64) {
 	minMultiplier := firstPositive(parseFloatValue(parameters["pretouchShadowOverlayQualityMinMultiplier"]), defaultPretouchShadowOverlayQualityMin)
 	maxMultiplier := cappedPositiveFloat(parseFloatValue(parameters["pretouchShadowOverlayQualityMaxMultiplier"]), defaultPretouchShadowOverlayQualityMax, maxPretouchShadowOverlayQualityMax)
@@ -941,10 +950,13 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	}
 	minCoverage := firstPositive(parseFloatValue(parameters["executionEntryMinTopBookCoverage"]), 0.5)
 	maxSpreadBps := firstPositive(parseFloatValue(parameters["executionEntryMaxSpreadBps"]), 8.0)
-	overlayPass := shadowOverlayQuantity > 0 &&
+	depthPass := shadowOverlayQuantity > 0 &&
 		overlayCoverage >= minCoverage &&
 		(orderBookStats.spreadBps <= 0 || orderBookStats.spreadBps <= maxSpreadBps)
-	overlayBlockReason := pretouchShadowBlockReason(shadowOverlayQuantity, overlayCoverage, overlayCoverage, minCoverage, orderBookStats.spreadBps, maxSpreadBps)
+	depthBlockReason := pretouchShadowBlockReason(shadowOverlayQuantity, overlayCoverage, overlayCoverage, minCoverage, orderBookStats.spreadBps, maxSpreadBps)
+	qualityBlockReason := pretouchShadowOverlayQualityBlockReason(qualitySizing)
+	overlayPass := depthPass && qualityBlockReason == ""
+	overlayBlockReason := firstNonEmpty(qualityBlockReason, depthBlockReason)
 	overlayRequested := true
 	if _, ok := parameters[pretouchShadowSubmitOverlayOrderParam]; ok {
 		overlayRequested = boolValue(parameters[pretouchShadowSubmitOverlayOrderParam])
@@ -985,7 +997,9 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 		"spreadBps":                          orderBookStats.spreadBps,
 		"topDepthQty":                        topDepthQty,
 		"shadowPreSubmitPass":                overlayPass,
+		"shadowDepthPreSubmitPass":           depthPass,
 		"shadowBlockReason":                  overlayBlockReason,
+		"overlayQualityBlockReason":          qualityBlockReason,
 		"liveExecutionMode":                  submitContext.executionMode,
 		"liveSandbox":                        submitContext.sandbox,
 		"liveSemanticsMode":                  boolValueToLiveSemanticsLabel(submitContext.liveExecution),
@@ -997,6 +1011,20 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 		"liveSizingPromotionState":           "testnet_shadow_overlay_collect",
 		"liveSizingPromotionBlocker":         "sample_size_lt_30_or_depth_not_calibrated",
 		"pretouchShadowOverlayQualitySizing": cloneMetadata(qualitySizing),
+	}
+}
+
+func pretouchShadowOverlayQualityBlockReason(qualitySizing map[string]any) string {
+	if qualitySizing == nil || !boolValue(qualitySizing["requested"]) || boolValue(qualitySizing["enabled"]) || boolValue(qualitySizing["fallbackSubmitAllowed"]) {
+		return ""
+	}
+	switch firstNonEmpty(stringValue(qualitySizing["status"]), "unknown") {
+	case "model_missing":
+		return "overlay_quality_model_missing"
+	case "feature_build_failed":
+		return "overlay_quality_feature_build_failed"
+	default:
+		return "overlay_quality_not_applied"
 	}
 }
 

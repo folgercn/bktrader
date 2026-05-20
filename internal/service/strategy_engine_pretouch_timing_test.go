@@ -524,7 +524,7 @@ func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *
 	}
 }
 
-func TestPretouchTimingEngineFallsBackWhenT3OverlayQualityModelMissing(t *testing.T) {
+func TestPretouchTimingEngineBlocksT3OverlayWhenQualityModelMissing(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
 	engine.t3Model = nil
@@ -542,19 +542,106 @@ func TestPretouchTimingEngineFallsBackWhenT3OverlayQualityModelMissing(t *testin
 	if err != nil {
 		t.Fatalf("evaluate failed: %v", err)
 	}
+	if decision.Action != "wait" || decision.Reason != "overlay_quality_model_missing" {
+		t.Fatalf("expected model-missing T3 overlay to wait, got %#v", decision)
+	}
+	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
+	if boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected model-missing quality sizing to block overlay submission: %#v", overlay)
+	}
+	if got := stringValue(overlay["overlayQualityBlockReason"]); got != "overlay_quality_model_missing" {
+		t.Fatalf("expected overlay_quality_model_missing block reason, got %s in %#v", got, overlay)
+	}
+	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])
+	if boolValue(quality["enabled"]) || stringValue(quality["status"]) != "model_missing" {
+		t.Fatalf("expected model_missing quality metadata, got %#v", quality)
+	}
+	if boolValue(quality["fallbackSubmitAllowed"]) {
+		t.Fatalf("expected fallback submit disabled by default, got %#v", quality)
+	}
+	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
+		t.Fatalf("expected no intent for model-missing overlay, got %#v", intent)
+	}
+}
+
+func TestPretouchTimingEngineAllowsExplicitT3OverlayQualityFallbackSubmit(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	engine.t3Model = nil
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualityFallbackParam] = true
+
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
+	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualityFallbackParam] = true
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
 	if decision.Action != "advance-plan" {
-		t.Fatalf("expected fixed fallback T3 overlay advance-plan, got %#v", decision)
+		t.Fatalf("expected explicit fixed fallback T3 overlay advance-plan, got %#v", decision)
 	}
 	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.08) > 1e-9 {
 		t.Fatalf("expected fixed T3 overlay fallback quantity 0.08, got %v", got)
 	}
 	overlay := mapValue(decision.Metadata["pretouchShadowOverlaySizing"])
-	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])
-	if boolValue(quality["enabled"]) || stringValue(quality["status"]) != "model_missing" {
-		t.Fatalf("expected model_missing quality metadata, got %#v", quality)
+	if !boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected explicit fallback submit to allow overlay order: %#v", overlay)
 	}
 	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_scale_intent_quantity" {
 		t.Fatalf("expected fixed overlay sizing mode on model missing, got %s", got)
+	}
+	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])
+	if !boolValue(quality["fallbackSubmitAllowed"]) || stringValue(quality["status"]) != "model_missing" {
+		t.Fatalf("expected explicit model_missing fallback metadata, got %#v", quality)
+	}
+}
+
+func TestPretouchShadowOverlaySizingBlocksFeatureBuildFailureFallbackByDefault(t *testing.T) {
+	overlay := pretouchShadowOverlaySizingFromParameters(
+		map[string]any{
+			"pretouchShadowMode":                  pretouchShadowModeTestnetCollect,
+			"pretouchShadowOverlayScale":          2.0,
+			"pretouchShadowOverlayBaseShare":      0.40,
+			pretouchShadowSubmitOverlayOrderParam: true,
+			"executionEntryMinTopBookCoverage":    0.5,
+			"executionEntryMaxSpreadBps":          8.0,
+		},
+		"BUY",
+		0.1,
+		orderBookDecisionStats{
+			bestAskQty: 10.0,
+			spreadBps:  1.0,
+		},
+		pretouchShadowSubmitContext{
+			liveExecution: true,
+			sandbox:       true,
+			executionMode: "rest",
+		},
+		map[string]any{
+			"requested":             true,
+			"enabled":               false,
+			"status":                "feature_build_failed",
+			"fallbackSubmitAllowed": false,
+		},
+	)
+	if overlay == nil {
+		t.Fatal("expected overlay sizing metadata")
+	}
+	if !boolValue(overlay["shadowDepthPreSubmitPass"]) {
+		t.Fatalf("expected depth guard to pass before quality fallback block: %#v", overlay)
+	}
+	if boolValue(overlay["shadowPreSubmitPass"]) || boolValue(overlay["submittedOverlayOrderEnabled"]) {
+		t.Fatalf("expected feature-build failure to block overlay submission: %#v", overlay)
+	}
+	if got := stringValue(overlay["submittedOverlayOrderBlockReason"]); got != "overlay_quality_feature_build_failed" {
+		t.Fatalf("expected feature-build fallback block reason, got %s in %#v", got, overlay)
 	}
 }
 
