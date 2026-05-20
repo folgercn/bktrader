@@ -155,7 +155,7 @@ func TrainPretouchModel(config PretouchTrainerConfig) error {
 	}
 
 	// Save
-	if err := SaveModelBundle(bundle, config.ModelOutPath); err != nil {
+	if err := SaveModelBundleAtomic(bundle, config.ModelOutPath); err != nil {
 		return fmt.Errorf("save model: %w", err)
 	}
 

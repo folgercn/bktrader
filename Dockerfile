@@ -21,7 +21,9 @@ COPY --from=backend-builder /out/platform-worker /usr/local/bin/platform-worker
 COPY configs/app.example.env ./configs/app.example.env
 COPY data/pretouch_model.json ./data/pretouch_model.json
 COPY data/pretouch_t3_overlay_rf_model.json ./data/pretouch_t3_overlay_rf_model.json
+COPY research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv ./research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv
 RUN test -s data/pretouch_model.json
 RUN test -s data/pretouch_t3_overlay_rf_model.json
+RUN test -s research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv
 EXPOSE 8080
 CMD ["platform-api"]

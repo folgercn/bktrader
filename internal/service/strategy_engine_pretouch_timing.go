@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
@@ -51,56 +52,87 @@ const (
 // for timing classification and probability sizing, and produces signal intents.
 // No Python dependency; single Go binary.
 type bkLiveEthPretouchTimingEngine struct {
-	platform   *Platform
-	detector   *PretouchEventDetector
-	t3Detector *PretouchEventDetector
-	model      *PretouchModelBundle
-	t3Model    *PretouchModelBundle
-	config     PretouchDetectorConfig
+	platform    *Platform
+	detector    *PretouchEventDetector
+	t3Detector  *PretouchEventDetector
+	model       atomic.Pointer[PretouchModelBundle]
+	t3Model     atomic.Pointer[PretouchModelBundle]
+	modelPath   string
+	t3ModelPath string
+	config      PretouchDetectorConfig
 }
 
 func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimingEngine {
 	config := DefaultPretouchDetectorConfig()
 	engine := &bkLiveEthPretouchTimingEngine{
-		platform:   platform,
-		detector:   NewPretouchEventDetector("ETHUSDT", config),
-		t3Detector: NewPretouchEventDetector("ETHUSDT", config),
-		config:     config,
+		platform:    platform,
+		detector:    NewPretouchEventDetector("ETHUSDT", config),
+		t3Detector:  NewPretouchEventDetector("ETHUSDT", config),
+		modelPath:   firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_MODEL_PATH")), defaultPretouchModelPath),
+		t3ModelPath: firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH")), defaultPretouchT3OverlayModelPath),
+		config:      config,
 	}
 
 	// Try to load model bundle from default path. Deployments can override this
 	// without changing the launch template.
-	modelPath := firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_MODEL_PATH")), defaultPretouchModelPath)
-	if bundle, err := LoadModelBundle(modelPath); err == nil {
-		engine.model = bundle
+	if bundle, err := LoadModelBundle(engine.modelPath); err == nil {
+		engine.setLeadModel(bundle)
 		platform.logger("service.pretouch_timing").Info("pretouch model loaded",
+			"path", engine.modelPath,
 			"version", bundle.Version,
 			"timing_loocv", bundle.TimingLOOCV,
 			"rf_accuracy", bundle.RFAccuracy,
 		)
 	} else {
 		platform.logger("service.pretouch_timing").Warn("pretouch model not found, events will be skipped until model is trained",
-			"path", modelPath,
+			"path", engine.modelPath,
 			"error", err,
 		)
 	}
 
-	t3ModelPath := firstNonEmpty(strings.TrimSpace(os.Getenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH")), defaultPretouchT3OverlayModelPath)
-	if bundle, err := LoadModelBundle(t3ModelPath); err == nil {
-		engine.t3Model = bundle
+	if bundle, err := LoadModelBundle(engine.t3ModelPath); err == nil {
+		engine.setT3OverlayModel(bundle)
 		platform.logger("service.pretouch_timing").Info("pretouch T3 overlay RF model loaded",
-			"path", t3ModelPath,
+			"path", engine.t3ModelPath,
 			"version", bundle.Version,
 			"rf_accuracy", bundle.RFAccuracy,
 		)
 	} else {
 		platform.logger("service.pretouch_timing").Warn("pretouch T3 overlay RF model not found, T3 overlay will keep fixed sizing unless the model is available",
-			"path", t3ModelPath,
+			"path", engine.t3ModelPath,
 			"error", err,
 		)
 	}
 
 	return engine
+}
+
+func (e *bkLiveEthPretouchTimingEngine) leadModel() *PretouchModelBundle {
+	if e == nil {
+		return nil
+	}
+	return e.model.Load()
+}
+
+func (e *bkLiveEthPretouchTimingEngine) setLeadModel(bundle *PretouchModelBundle) {
+	if e == nil {
+		return
+	}
+	e.model.Store(bundle)
+}
+
+func (e *bkLiveEthPretouchTimingEngine) t3OverlayModel() *PretouchModelBundle {
+	if e == nil {
+		return nil
+	}
+	return e.t3Model.Load()
+}
+
+func (e *bkLiveEthPretouchTimingEngine) setT3OverlayModel(bundle *PretouchModelBundle) {
+	if e == nil {
+		return
+	}
+	e.t3Model.Store(bundle)
 }
 
 func (e *bkLiveEthPretouchTimingEngine) Key() string {
@@ -188,7 +220,8 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	)
 
 	// Check if model is loaded
-	if e.model == nil {
+	leadModel := e.leadModel()
+	if leadModel == nil {
 		logger.Warn("no model loaded, skipping event",
 			"event_id", result.Event.EventID,
 		)
@@ -203,20 +236,20 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	}
 
 	// Build feature vector in the order expected by the model
-	features := make([]float64, len(e.model.FeatureNames))
-	for i, name := range e.model.FeatureNames {
+	features := make([]float64, len(leadModel.FeatureNames))
+	for i, name := range leadModel.FeatureNames {
 		if val, ok := result.Event.Features[name]; ok {
 			features[i] = val
-		} else if i < len(e.model.Medians) {
-			features[i] = e.model.Medians[i] // impute with train median
+		} else if i < len(leadModel.Medians) {
+			features[i] = leadModel.Medians[i] // impute with train median
 		}
 	}
 
 	// Timing classification (DT3)
-	timingRegime := normalizePretouchTimingRegime(e.model.TimingTree.Predict(features))
+	timingRegime := normalizePretouchTimingRegime(leadModel.TimingTree.Predict(features))
 
 	// RF probability
-	rfProb := e.model.RFModel.PredictProba(features)
+	rfProb := leadModel.RFModel.PredictProba(features)
 
 	// Sizing multiplier = clip(prob × 2, 0, 2)
 	sizingMultiplier := rfProb * 2
@@ -245,7 +278,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 				"pretouchEvent": result.Event.EventID,
 				"timingRegime":  "skip",
 				"rfProbability": rfProb,
-				"modelVersion":  e.model.Version,
+				"modelVersion":  leadModel.Version,
 			},
 		}, nil
 	}
@@ -263,7 +296,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 				"pretouchEvent": result.Event.EventID,
 				"timingRegime":  timingRegime,
 				"rfProbability": rfProb,
-				"modelVersion":  e.model.Version,
+				"modelVersion":  leadModel.Version,
 			},
 		}, nil
 	}
@@ -294,7 +327,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"production_suggested_quantity", productionSuggestedQuantity,
 		"suggested_quantity", suggestedQuantity,
 		"shadow_risk_on_quantity_enabled", boolValue(mapValue(shadowSizing)["submittedRiskOnQuantityEnabled"]),
-		"model_version", e.model.Version,
+		"model_version", leadModel.Version,
 	)
 
 	currentSnapshot := pretouchBarSnapshot(currentBar)
@@ -333,7 +366,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"finalPositionSize":             finalPositionSize,
 		"productionSuggestedQuantity":   productionSuggestedQuantity,
 		"suggestedQuantity":             suggestedQuantity,
-		"modelVersion":                  e.model.Version,
+		"modelVersion":                  leadModel.Version,
 		"signalSource":                  "pretouch-timing-unified",
 		"signalBarDecision":             signalBarDecision,
 		"signalBarStateKey":             signalBarTradeLimitKey,
@@ -719,17 +752,19 @@ func (e *bkLiveEthPretouchTimingEngine) pretouchT3OverlayQualitySizing(parameter
 		"modelArtifactPath":     defaultPretouchT3OverlayModelPath,
 		"modelArtifactEnvVar":   "BK_PRETOUCH_T3_OVERLAY_MODEL_PATH",
 	}
-	if e == nil || e.t3Model == nil || e.t3Model.RFModel == nil {
+	t3Model := e.t3OverlayModel()
+	if t3Model == nil || t3Model.RFModel == nil {
 		return quality
 	}
-	quality["modelVersion"] = e.t3Model.Version
-	features, featureMeta, ok := e.buildPretouchT3OverlayQualityFeatures(event, e.t3Model.FeatureNames)
+	leadModel := e.leadModel()
+	quality["modelVersion"] = t3Model.Version
+	features, featureMeta, ok := e.buildPretouchT3OverlayQualityFeatures(event, t3Model, leadModel)
 	quality["features"] = featureMeta
 	if !ok {
 		quality["status"] = "feature_build_failed"
 		return quality
 	}
-	probability := pretouchFiniteFloat(e.t3Model.RFModel.PredictProba(features), 0.5)
+	probability := pretouchFiniteFloat(t3Model.RFModel.PredictProba(features), 0.5)
 	rawMultiplier := minMultiplier + probability*(maxMultiplier-minMultiplier)
 	linearMultiplier := pretouchClampFloat(rawMultiplier, minMultiplier, maxMultiplier)
 	costPenalty := pretouchT3OverlayQualityCostPenalty(event, costThresholdATR)
@@ -744,17 +779,21 @@ func (e *bkLiveEthPretouchTimingEngine) pretouchT3OverlayQualitySizing(parameter
 	return quality
 }
 
-func (e *bkLiveEthPretouchTimingEngine) buildPretouchT3OverlayQualityFeatures(event domain.PretouchEvent, featureNames []string) ([]float64, map[string]any, bool) {
+func (e *bkLiveEthPretouchTimingEngine) buildPretouchT3OverlayQualityFeatures(event domain.PretouchEvent, t3Model, leadModel *PretouchModelBundle) ([]float64, map[string]any, bool) {
+	var featureNames []string
+	if t3Model != nil {
+		featureNames = t3Model.FeatureNames
+	}
 	features := make([]float64, len(featureNames))
 	meta := make(map[string]any, len(featureNames)+3)
 	leadProbability := 0.0
 	leadProbabilityOK := false
 	if pretouchFeatureNamesContain(featureNames, "rf_probability") {
-		leadProbability, leadProbabilityOK = e.predictPretouchLeadRFProbability(event.Features)
+		leadProbability, leadProbabilityOK = e.predictPretouchLeadRFProbability(event.Features, leadModel)
 		meta["leadRFProbability"] = leadProbability
 		meta["leadRFProbabilityAvailable"] = leadProbabilityOK
-		if e != nil && e.model != nil {
-			meta["leadModelVersion"] = e.model.Version
+		if leadModel != nil {
+			meta["leadModelVersion"] = leadModel.Version
 		}
 		if !leadProbabilityOK {
 			meta["missingFeature"] = "rf_probability"
@@ -764,8 +803,8 @@ func (e *bkLiveEthPretouchTimingEngine) buildPretouchT3OverlayQualityFeatures(ev
 	for i, name := range featureNames {
 		value, ok := pretouchT3OverlayFeatureValue(event, name, leadProbability)
 		if !ok {
-			if e != nil && e.t3Model != nil && i < len(e.t3Model.Medians) {
-				value = e.t3Model.Medians[i]
+			if t3Model != nil && i < len(t3Model.Medians) {
+				value = t3Model.Medians[i]
 				ok = true
 				meta["imputed_"+name] = true
 			}
@@ -781,22 +820,22 @@ func (e *bkLiveEthPretouchTimingEngine) buildPretouchT3OverlayQualityFeatures(ev
 	return features, meta, true
 }
 
-func (e *bkLiveEthPretouchTimingEngine) predictPretouchLeadRFProbability(eventFeatures map[string]float64) (float64, bool) {
-	if e == nil || e.model == nil || e.model.RFModel == nil || len(e.model.FeatureNames) == 0 {
+func (e *bkLiveEthPretouchTimingEngine) predictPretouchLeadRFProbability(eventFeatures map[string]float64, leadModel *PretouchModelBundle) (float64, bool) {
+	if leadModel == nil || leadModel.RFModel == nil || len(leadModel.FeatureNames) == 0 {
 		return 0, false
 	}
-	features := make([]float64, len(e.model.FeatureNames))
-	for i, name := range e.model.FeatureNames {
+	features := make([]float64, len(leadModel.FeatureNames))
+	for i, name := range leadModel.FeatureNames {
 		value, ok := eventFeatures[name]
 		if !ok {
-			if i >= len(e.model.Medians) {
+			if i >= len(leadModel.Medians) {
 				return 0, false
 			}
-			value = e.model.Medians[i]
+			value = leadModel.Medians[i]
 		}
 		features[i] = pretouchFiniteFloat(value, 0)
 	}
-	return pretouchFiniteFloat(e.model.RFModel.PredictProba(features), 0.5), true
+	return pretouchFiniteFloat(leadModel.RFModel.PredictProba(features), 0.5), true
 }
 
 func pretouchT3OverlayFeatureValue(event domain.PretouchEvent, name string, leadProbability float64) (float64, bool) {

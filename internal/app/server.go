@@ -33,6 +33,7 @@ type RuntimeOptions struct {
 	StartSignalRuntimeScanner      bool
 	StartLiveSessionControlScanner bool
 	StartReadOnlyRuntimeSupervisor bool
+	StartPretouchModelScheduler    bool
 }
 
 func RuntimeOptionsForRole(role string) RuntimeOptions {
@@ -45,6 +46,7 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 			StartLiveSync:                  true,
 			StartRuntimeEventConsumer:      true,
 			StartLiveSessionControlScanner: true,
+			StartPretouchModelScheduler:    true,
 		}
 	case "signal-runtime-runner":
 		return RuntimeOptions{
@@ -65,6 +67,7 @@ func RuntimeOptionsForRole(role string) RuntimeOptions {
 			StartRuntimeEventConsumer:      true,
 			StartSignalRuntimeScanner:      true,
 			StartLiveSessionControlScanner: true,
+			StartPretouchModelScheduler:    true,
 		}
 	}
 }
@@ -102,6 +105,7 @@ func NewServerWithRuntimeOptions(cfg config.Config, runtime RuntimeOptions) (*ht
 		"signal_runtime_scanner", runtime.StartSignalRuntimeScanner,
 		"live_session_control_scanner", runtime.StartLiveSessionControlScanner,
 		"read_only_runtime_supervisor", runtime.StartReadOnlyRuntimeSupervisor,
+		"pretouch_model_scheduler", runtime.StartPretouchModelScheduler,
 	)
 
 	return &http.Server{
@@ -196,6 +200,9 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 	if runtime.StartLiveSessionControlScanner {
 		platform.StartLiveSessionControlScanner(ctx)
 	}
+	if runtime.StartPretouchModelScheduler {
+		platform.StartPretouchModelScheduler(ctx, pretouchModelSchedulerConfigForConfig(cfg))
+	}
 	if runtime.StartReadOnlyRuntimeSupervisor {
 		targets := service.ParseRuntimeSupervisorTargets(cfg.SupervisorTargets, cfg.SupervisorBearerToken)
 		if len(targets) == 0 {
@@ -216,6 +223,21 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 				"container_executor", cfg.SupervisorContainerExecutor,
 			)
 		}
+	}
+}
+
+func pretouchModelSchedulerConfigForConfig(cfg config.Config) service.PretouchModelSchedulerConfig {
+	return service.PretouchModelSchedulerConfig{
+		HotReloadEnabled:       cfg.PretouchModelHotReloadEnabled,
+		ReloadInterval:         time.Duration(cfg.PretouchModelReloadIntervalSec) * time.Second,
+		RetrainEnabled:         cfg.PretouchModelRetrainEnabled,
+		RetrainInterval:        time.Duration(cfg.PretouchModelRetrainIntervalSec) * time.Second,
+		LeadRetrainEnabled:     cfg.PretouchLeadRetrainEnabled,
+		T3RetrainEnabled:       cfg.PretouchT3RetrainEnabled,
+		LeadModelPath:          cfg.PretouchModelPath,
+		LeadEventsCSVPath:      cfg.PretouchLeadRetrainEventsCSV,
+		T3OverlayModelPath:     cfg.PretouchT3OverlayModelPath,
+		T3OverlayTradesCSVPath: cfg.PretouchT3RetrainTradesCSV,
 	}
 }
 

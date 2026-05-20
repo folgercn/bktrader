@@ -17,7 +17,7 @@ func TestRuntimeOptionsForSignalRuntimeRunner(t *testing.T) {
 	if !options.StartSignalRuntimeScanner {
 		t.Fatal("expected signal-runtime-runner to start signal runtime scanner")
 	}
-	if options.RecoverLiveTrading || options.StartLiveSync || options.StartRuntimeEventConsumer || options.StartTelegram || options.StartDashboard || options.StartReadOnlyRuntimeSupervisor {
+	if options.RecoverLiveTrading || options.StartLiveSync || options.StartRuntimeEventConsumer || options.StartTelegram || options.StartDashboard || options.StartReadOnlyRuntimeSupervisor || options.StartPretouchModelScheduler {
 		t.Fatalf("expected signal-runtime-runner to avoid live/telegram/dashboard components, got %+v", options)
 	}
 }
@@ -32,6 +32,9 @@ func TestRuntimeOptionsForLiveRunnerDoesNotStartSignalRuntimeScanner(t *testing.
 	}
 	if !options.RecoverLiveTrading || !options.StartLiveSync || !options.StartRuntimeEventConsumer || !options.StartLiveSessionControlScanner {
 		t.Fatalf("expected live-runner to keep live recovery/sync/event consumer, got %+v", options)
+	}
+	if !options.StartPretouchModelScheduler {
+		t.Fatal("expected live-runner to start pretouch model scheduler")
 	}
 	if options.StartReadOnlyRuntimeSupervisor {
 		t.Fatal("expected live-runner not to start read-only supervisor")
@@ -49,6 +52,9 @@ func TestRuntimeOptionsForAPIDoesNotStartLiveSessionScanner(t *testing.T) {
 	if options.StartReadOnlyRuntimeSupervisor {
 		t.Fatal("expected api role not to start read-only supervisor")
 	}
+	if options.StartPretouchModelScheduler {
+		t.Fatal("expected api role not to start pretouch model scheduler")
+	}
 }
 
 func TestRuntimeOptionsForAPIStartsReadOnlySupervisorWhenTargetsConfigured(t *testing.T) {
@@ -59,7 +65,7 @@ func TestRuntimeOptionsForAPIStartsReadOnlySupervisorWhenTargetsConfigured(t *te
 	if !options.StartReadOnlyRuntimeSupervisor {
 		t.Fatal("expected api role to start read-only supervisor when SUPERVISOR_TARGETS is configured")
 	}
-	if options.StartLiveSessionControlScanner || options.RecoverLiveTrading || options.StartLiveSync {
+	if options.StartLiveSessionControlScanner || options.RecoverLiveTrading || options.StartLiveSync || options.StartPretouchModelScheduler {
 		t.Fatalf("expected api role to avoid live runtime components, got %+v", options)
 	}
 }
@@ -76,7 +82,8 @@ func TestRuntimeOptionsForSupervisorOnlyStartsReadOnlySupervisor(t *testing.T) {
 		options.StartDashboard ||
 		options.StartRuntimeEventConsumer ||
 		options.StartSignalRuntimeScanner ||
-		options.StartLiveSessionControlScanner {
+		options.StartLiveSessionControlScanner ||
+		options.StartPretouchModelScheduler {
 		t.Fatalf("expected supervisor role to avoid business runtime components, got %+v", options)
 	}
 }
@@ -180,7 +187,8 @@ func TestRuntimeOptionsForMonolithStartAllRuntimeComponents(t *testing.T) {
 		!options.StartDashboard ||
 		!options.StartRuntimeEventConsumer ||
 		!options.StartSignalRuntimeScanner ||
-		!options.StartLiveSessionControlScanner {
+		!options.StartLiveSessionControlScanner ||
+		!options.StartPretouchModelScheduler {
 		t.Fatalf("expected monolith to start all runtime components, got %+v", options)
 	}
 	if options.StartReadOnlyRuntimeSupervisor {

@@ -463,6 +463,8 @@ bk-live-eth-pretouch-timing
 - `internal/service/pretouch_event_detector.go`
 - `internal/service/pretouch_tree.go`
 - `internal/service/pretouch_trainer.go`
+- `internal/service/pretouch_t3_overlay_trainer.go`
+- `internal/service/pretouch_model_scheduler.go`
 - `cmd/pretouch-train/main.go`
 - `internal/domain/pretouch_event.go`
 - `data/pretouch_model.json`
@@ -473,6 +475,20 @@ bk-live-eth-pretouch-timing
 live 进程默认加载 lead 模型 `data/pretouch_model.json`。部署环境可通过 `BK_PRETOUCH_MODEL_PATH` 覆盖路径。
 T3 overlay quality model 默认加载 `data/pretouch_t3_overlay_rf_model.json`。部署环境可通过
 `BK_PRETOUCH_T3_OVERLAY_MODEL_PATH` 覆盖路径。
+
+`live-runner` / `monolith` 会启动 pretouch model scheduler：
+
+- hot reload 默认开启：`BK_PRETOUCH_MODEL_HOT_RELOAD_ENABLED=true`，每
+  `BK_PRETOUCH_MODEL_RELOAD_INTERVAL_SECONDS=30` 秒检查 lead / T3 artifact 的 size + mtime。
+- retrain 默认开启：`BK_PRETOUCH_MODEL_RETRAIN_ENABLED=true`，每
+  `BK_PRETOUCH_MODEL_RETRAIN_INTERVAL_SECONDS=86400` 秒尝试重训。
+- lead 重训开关：`BK_PRETOUCH_LEAD_RETRAIN_ENABLED=true`，训练输入来自
+  `BK_PRETOUCH_RETRAIN_EVENTS_CSV`；若 CSV 不存在或为空，重训跳过并保留当前模型。
+- T3 overlay 重训开关：`BK_PRETOUCH_T3_OVERLAY_RETRAIN_ENABLED=true`，训练输入来自
+  `BK_PRETOUCH_T3_OVERLAY_RETRAIN_TRADES_CSV`，默认随 runtime image 携带
+  `research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv`。
+- 重训写 artifact 使用 temp file + atomic rename；hot reload 只在 JSON 加载和 bundle 校验成功后替换内存模型。
+- 已运行 session 不需要重建才能吃到新模型：`EvaluateSignal` 每次评估从 engine 的 atomic model pointer 读取当前模型快照。坏文件、半写入文件或校验失败不会覆盖上一版可用模型。
 
 Lead 模型不可用、JSON 不合法、feature 数量不匹配或 tree feature index 越界时，lead 策略视为
 `no_model_loaded`，不入场，也不会退化为 fixed sizing。T3 overlay quality 模型不可用或 feature build

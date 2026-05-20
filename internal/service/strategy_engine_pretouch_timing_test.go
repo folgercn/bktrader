@@ -464,7 +464,7 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
-	engine.t3Model = testPretouchT3OverlayQualityModel()
+	engine.setT3OverlayModel(testPretouchT3OverlayQualityModel())
 	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
 	enablePretouchRiskOnShadow(&ctx, true)
 	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
@@ -527,7 +527,7 @@ func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *
 func TestPretouchTimingEngineBlocksT3OverlayWhenQualityModelMissing(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
-	engine.t3Model = nil
+	engine.setT3OverlayModel(nil)
 	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
 	enablePretouchRiskOnShadow(&ctx, true)
 	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
@@ -567,7 +567,7 @@ func TestPretouchTimingEngineBlocksT3OverlayWhenQualityModelMissing(t *testing.T
 func TestPretouchTimingEngineAllowsExplicitT3OverlayQualityFallbackSubmit(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
-	engine.t3Model = nil
+	engine.setT3OverlayModel(nil)
 	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
 	enablePretouchRiskOnShadow(&ctx, true)
 	ctx.ExecutionContext.Parameters[pretouchShadowOverlayQualitySizingParam] = true
@@ -971,7 +971,7 @@ func TestPretouchTimingEngineHoldsOpenPositionWhenStopNotBreached(t *testing.T) 
 func TestPretouchTimingEngineSkipsWhenModelMissing(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
-	engine.model = nil
+	engine.setLeadModel(nil)
 
 	_, _ = engine.EvaluateSignal(testPretouchSignalContext(start, 101))
 	decision, err := engine.EvaluateSignal(testPretouchSignalContext(start.Add(60*time.Second), 105.1))
@@ -1065,23 +1065,24 @@ func TestPretouchBarsFromEvaluationContextSynthesizesCurrentBar(t *testing.T) {
 
 func testPretouchTimingEngine(timingRegime string, rfProba float64) *bkLiveEthPretouchTimingEngine {
 	config := DefaultPretouchDetectorConfig()
-	return &bkLiveEthPretouchTimingEngine{
+	engine := &bkLiveEthPretouchTimingEngine{
 		platform:   NewPlatform(memory.NewStore()),
 		detector:   NewPretouchEventDetector("ETHUSDT", config),
 		t3Detector: NewPretouchEventDetector("ETHUSDT", config),
 		config:     config,
-		model: &PretouchModelBundle{
-			TimingTree: &TreeNode{FeatureIndex: -1, LeafValue: timingRegime, LeafProba: 1},
-			RFModel: &RandomForest{
-				Trees:       []*TreeNode{{FeatureIndex: -1, LeafValue: "1", LeafProba: rfProba}},
-				NEstimators: 1,
-			},
-			FeatureNames: pretouchTrainFeatures,
-			Medians:      make([]float64, len(pretouchTrainFeatures)),
-			Version:      "test",
-			RFAccuracy:   0.7,
-		},
 	}
+	engine.setLeadModel(&PretouchModelBundle{
+		TimingTree: &TreeNode{FeatureIndex: -1, LeafValue: timingRegime, LeafProba: 1},
+		RFModel: &RandomForest{
+			Trees:       []*TreeNode{{FeatureIndex: -1, LeafValue: "1", LeafProba: rfProba}},
+			NEstimators: 1,
+		},
+		FeatureNames: pretouchTrainFeatures,
+		Medians:      make([]float64, len(pretouchTrainFeatures)),
+		Version:      "test",
+		RFAccuracy:   0.7,
+	})
+	return engine
 }
 
 func testPretouchT3OverlayQualityModel() *PretouchModelBundle {
