@@ -143,6 +143,42 @@ def _excursion_pct(
     return float(mfe), float(mae)
 
 
+ENTRY_CONTEXT_METADATA_COLUMNS = (
+    "signal_start",
+    "signal_bar_index",
+    "breakout_level",
+    "breakout_pre_touch_seconds",
+    "breakout_extension_atr",
+    "level_to_signal_open_atr",
+    "external_event_key",
+    "external_touch_time",
+    "external_shape_variant",
+    "external_context_combo_spec",
+    "external_context_model_status",
+    "timing_prediction",
+    "rf_probability",
+    "sizing_multiplier",
+    "cost_penalty",
+    "roundtrip_cost_atr",
+    "context_model_probability",
+    "context_model_scale",
+    "speed_300s_atr",
+    "eff_300s",
+    "touch_extension_atr",
+    "live_touch_extension_atr",
+    "pre_touch_seconds",
+)
+
+
+def _entry_context_metadata_for_pair(open_entry: pd.Series) -> dict[str, object]:
+    """Copy event-level entry metadata onto the paired trade row."""
+    metadata: dict[str, object] = {}
+    for column in ENTRY_CONTEXT_METADATA_COLUMNS:
+        if column in open_entry and pd.notna(open_entry[column]):
+            metadata[column] = open_entry[column]
+    return metadata
+
+
 def pair_lifecycle_trades(
     ledger: pd.DataFrame,
     second_bars: pd.DataFrame,
@@ -199,44 +235,44 @@ def pair_lifecycle_trades(
             bars=early_window,
         )
 
-        rows.append(
-            {
-                "symbol": symbol,
-                "month": month,
-                "symbol_month": f"{symbol}:{month}",
-                "breakout_shape_name": str(open_entry.get("breakout_shape_name", "")),
-                "side": side,
-                "symbol_side": f"{symbol}:{side}",
-                "entry_time": entry_time.isoformat(),
-                "exit_time": exit_time.isoformat(),
-                "entry_type": str(open_entry["type"]),
-                "entry_reason": str(open_entry["reason"]),
-                "side_entry_reason": f"{side}:{open_entry['reason']}",
-                "symbol_month_side": f"{symbol}:{month}:{side}",
-                "symbol_month_entry_reason": f"{symbol}:{month}:{open_entry['reason']}",
-                "symbol_month_side_entry_reason": f"{symbol}:{month}:{side}:{open_entry['reason']}",
-                "exit_reason": str(row["reason"]),
-                "entry_price": entry_price,
-                "exit_price": exit_price,
-                "notional": notional,
-                "pnl_pct": round(float(pnl_pct * 100.0), 6),
-                "pnl_bps": round(float(pnl_pct * 10000.0), 6),
-                "pnl_value": round(float(pnl_value), 6),
-                "pnl_initial_pct": round(float(pnl_value / initial_balance * 100.0), 6),
-                "hold_seconds": round(float(hold_seconds), 3),
-                "hold_bucket": _hold_bucket(hold_seconds),
-                "mfe_pct": round(float(mfe_pct), 6),
-                "mae_pct": round(float(mae_pct), 6),
-                "mfe_bps": round(float(mfe_pct * 100.0), 6),
-                "mae_bps": round(float(mae_pct * 100.0), 6),
-                "mfe_300s_pct": round(float(mfe_early_pct), 6),
-                "mae_300s_pct": round(float(mae_early_pct), 6),
-                "mfe_300s_bps": round(float(mfe_early_pct * 100.0), 6),
-                "mae_300s_bps": round(float(mae_early_pct * 100.0), 6),
-                "mae_300s_bucket": _mae_bucket(float(mae_early_pct * 100.0)),
-                "outcome": "win" if pnl_value > 0 else "loss",
-            }
-        )
+        item = {
+            "symbol": symbol,
+            "month": month,
+            "symbol_month": f"{symbol}:{month}",
+            "breakout_shape_name": str(open_entry.get("breakout_shape_name", "")),
+            "side": side,
+            "symbol_side": f"{symbol}:{side}",
+            "entry_time": entry_time.isoformat(),
+            "exit_time": exit_time.isoformat(),
+            "entry_type": str(open_entry["type"]),
+            "entry_reason": str(open_entry["reason"]),
+            "side_entry_reason": f"{side}:{open_entry['reason']}",
+            "symbol_month_side": f"{symbol}:{month}:{side}",
+            "symbol_month_entry_reason": f"{symbol}:{month}:{open_entry['reason']}",
+            "symbol_month_side_entry_reason": f"{symbol}:{month}:{side}:{open_entry['reason']}",
+            "exit_reason": str(row["reason"]),
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "notional": notional,
+            "pnl_pct": round(float(pnl_pct * 100.0), 6),
+            "pnl_bps": round(float(pnl_pct * 10000.0), 6),
+            "pnl_value": round(float(pnl_value), 6),
+            "pnl_initial_pct": round(float(pnl_value / initial_balance * 100.0), 6),
+            "hold_seconds": round(float(hold_seconds), 3),
+            "hold_bucket": _hold_bucket(hold_seconds),
+            "mfe_pct": round(float(mfe_pct), 6),
+            "mae_pct": round(float(mae_pct), 6),
+            "mfe_bps": round(float(mfe_pct * 100.0), 6),
+            "mae_bps": round(float(mae_pct * 100.0), 6),
+            "mfe_300s_pct": round(float(mfe_early_pct), 6),
+            "mae_300s_pct": round(float(mae_early_pct), 6),
+            "mfe_300s_bps": round(float(mfe_early_pct * 100.0), 6),
+            "mae_300s_bps": round(float(mae_early_pct * 100.0), 6),
+            "mae_300s_bucket": _mae_bucket(float(mae_early_pct * 100.0)),
+            "outcome": "win" if pnl_value > 0 else "loss",
+        }
+        item.update(_entry_context_metadata_for_pair(open_entry))
+        rows.append(item)
         open_entry = None
 
     return pd.DataFrame(rows)

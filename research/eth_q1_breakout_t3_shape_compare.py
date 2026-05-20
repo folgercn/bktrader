@@ -460,8 +460,14 @@ def _external_event_context_metadata(event: dict) -> dict:
         "external_context_combo_spec": str(event.get("context_combo_spec", "")),
         "external_context_model_status": str(event.get("context_model_status", "")),
     }
+    for column in ("timing_prediction",):
+        if column in event and pd.notna(event[column]):
+            metadata[column] = str(event[column])
     for column in (
         "rf_probability",
+        "sizing_multiplier",
+        "cost_penalty",
+        "roundtrip_cost_atr",
         "context_model_probability",
         "context_model_scale",
         "speed_300s_atr",
