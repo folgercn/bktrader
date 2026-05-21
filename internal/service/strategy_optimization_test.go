@@ -3,6 +3,7 @@ package service
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
@@ -870,6 +871,189 @@ func TestDeriveLivePositionStateTriggersRMultipleTrailForPretouchLong(t *testing
 	exitState := deriveLiveExitState(parameters, currentPosition, positionState, 106.0, "SL")
 	if !boolValue(exitState["ready"]) {
 		t.Fatalf("expected long exit ready below R-multiple trailing stop, got %#v", exitState)
+	}
+}
+
+func TestEvaluateLiveExitStateDelaysSelectedT3TrailingButKeepsHardStop(t *testing.T) {
+	entryAt := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	parameters := map[string]any{
+		pretouchShadowT3StopGateEnabledParam: true,
+		"stop_loss_atr":                      0.45,
+		"stop_mode":                          "atr",
+		"trail_start_r":                      1.5,
+		"trail_buffer_atr":                   0.05,
+	}
+	signalBarState := map[string]any{
+		"atr14":    10.0,
+		"current":  map[string]any{"close": 150.0},
+		"prevBar1": map[string]any{"high": 151.0, "low": 95.0},
+		"prevBar2": map[string]any{"high": 152.0, "low": 94.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"id":         "position-t3-hard3",
+		"symbol":     "ETHUSDT",
+		"side":       "LONG",
+		"entryPrice": 100.0,
+		"quantity":   1.0,
+	}
+	sessionState := map[string]any{
+		"lastStrategyEvaluationAt": entryAt.Add(time.Minute).Format(time.RFC3339),
+		"lastDispatchedAt":         entryAt.Format(time.RFC3339),
+		"lastDispatchedIntent": map[string]any{
+			"role":       "entry",
+			"reason":     "Pretouch-T3-Overlay",
+			"signalKind": "entry-t3-overlay",
+			"side":       "BUY",
+			"symbol":     "ETHUSDT",
+			"metadata": map[string]any{
+				"pretouchT3ExitProfile": map[string]any{
+					"id":                             pretouchT3ExitProfileDeterministicHard3Delay79ID,
+					"selected":                       true,
+					"hardStopATR":                    3.0,
+					"minHoldSecondsBeforeTrailingSL": 4740.0,
+				},
+			},
+		},
+	}
+
+	state := evaluateLiveExitState(parameters, currentPosition, signalBarState, 150.0, sessionState, "SL")
+	if boolValue(state["ready"]) {
+		t.Fatalf("expected selected T3 exit to wait above hard stop, got %#v", state)
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "hard-stop" {
+		t.Fatalf("expected hard-stop target while trailing is delayed, got %s in %#v", got, state)
+	}
+	if got := parseFloatValue(state["targetPrice"]); got != 70.0 {
+		t.Fatalf("expected hard3 stop at 70, got %v in %#v", got, state)
+	}
+	if !boolValue(state["trailingStopDelayActive"]) || boolValue(state["trailingStopActive"]) {
+		t.Fatalf("expected trailing delay active and trailing inactive, got %#v", state)
+	}
+
+	state = evaluateLiveExitState(parameters, currentPosition, signalBarState, 69.0, sessionState, "SL")
+	if !boolValue(state["ready"]) {
+		t.Fatalf("expected hard stop to trigger immediately before 79m, got %#v", state)
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "hard-stop" {
+		t.Fatalf("expected hard-stop source for immediate breach, got %s in %#v", got, state)
+	}
+}
+
+func TestEvaluateLiveExitStateActivatesSelectedT3TrailingAfterDelay(t *testing.T) {
+	entryAt := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	parameters := map[string]any{
+		pretouchShadowT3StopGateEnabledParam: true,
+		"stop_loss_atr":                      0.45,
+		"stop_mode":                          "atr",
+		"trail_start_r":                      1.5,
+		"trail_buffer_atr":                   0.05,
+	}
+	signalBarState := map[string]any{
+		"atr14":    10.0,
+		"current":  map[string]any{"close": 149.0},
+		"prevBar1": map[string]any{"high": 151.0, "low": 95.0},
+		"prevBar2": map[string]any{"high": 152.0, "low": 94.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"id":         "position-t3-hard3",
+		"symbol":     "ETHUSDT",
+		"side":       "LONG",
+		"entryPrice": 100.0,
+		"quantity":   1.0,
+	}
+	sessionState := map[string]any{
+		"lastStrategyEvaluationAt": entryAt.Add(80 * time.Minute).Format(time.RFC3339),
+		"lastDispatchedAt":         entryAt.Format(time.RFC3339),
+		"watermarkPositionKey":     buildLivePositionWatermarkKey(currentPosition),
+		"hwm":                      150.0,
+		"lwm":                      100.0,
+		"lastDispatchedIntent": map[string]any{
+			"role":       "entry",
+			"reason":     "Pretouch-T3-Overlay",
+			"signalKind": "entry-t3-overlay",
+			"side":       "BUY",
+			"symbol":     "ETHUSDT",
+			"metadata": map[string]any{
+				"pretouchT3ExitProfile": map[string]any{
+					"id":                             pretouchT3ExitProfileDeterministicHard3Delay79ID,
+					"selected":                       true,
+					"hardStopATR":                    3.0,
+					"minHoldSecondsBeforeTrailingSL": 4740.0,
+				},
+			},
+		},
+	}
+
+	state := evaluateLiveExitState(parameters, currentPosition, signalBarState, 149.0, sessionState, "SL")
+	if !boolValue(state["trailingStopActive"]) || boolValue(state["trailingStopDelayActive"]) {
+		t.Fatalf("expected selected T3 trailing to activate after delay, got %#v", state)
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "trailing-stop" {
+		t.Fatalf("expected trailing-stop source after delay, got %s in %#v", got, state)
+	}
+	if got := parseFloatValue(state["targetPrice"]); got != 149.5 {
+		t.Fatalf("expected delayed trailing target 149.5, got %v in %#v", got, state)
+	}
+	if !boolValue(state["ready"]) {
+		t.Fatalf("expected pullback through delayed trailing stop to be exit-ready, got %#v", state)
+	}
+}
+
+func TestEvaluateLiveExitStateLeavesT3BaselineProfileUnchanged(t *testing.T) {
+	entryAt := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	parameters := map[string]any{
+		pretouchShadowT3StopGateEnabledParam: true,
+		"stop_loss_atr":                      0.45,
+		"stop_mode":                          "atr",
+		"trail_start_r":                      1.5,
+		"trail_buffer_atr":                   0.05,
+	}
+	signalBarState := map[string]any{
+		"atr14":    10.0,
+		"current":  map[string]any{"close": 149.0},
+		"prevBar1": map[string]any{"high": 151.0, "low": 95.0},
+		"prevBar2": map[string]any{"high": 152.0, "low": 94.0},
+	}
+	currentPosition := map[string]any{
+		"found":      true,
+		"id":         "position-t3-baseline",
+		"symbol":     "ETHUSDT",
+		"side":       "LONG",
+		"entryPrice": 100.0,
+		"quantity":   1.0,
+	}
+	sessionState := map[string]any{
+		"lastStrategyEvaluationAt": entryAt.Add(time.Minute).Format(time.RFC3339),
+		"lastDispatchedAt":         entryAt.Format(time.RFC3339),
+		"watermarkPositionKey":     buildLivePositionWatermarkKey(currentPosition),
+		"hwm":                      150.0,
+		"lwm":                      100.0,
+		"lastDispatchedIntent": map[string]any{
+			"role":       "entry",
+			"reason":     "Pretouch-T3-Overlay",
+			"signalKind": "entry-t3-overlay",
+			"side":       "BUY",
+			"symbol":     "ETHUSDT",
+			"metadata": map[string]any{
+				"pretouchT3ExitProfile": map[string]any{
+					"id":       pretouchT3ExitProfileBaselineID,
+					"selected": false,
+				},
+			},
+		},
+	}
+
+	state := evaluateLiveExitState(parameters, currentPosition, signalBarState, 149.0, sessionState, "SL")
+	if !boolValue(state["trailingStopActive"]) || boolValue(state["trailingStopDelayActive"]) {
+		t.Fatalf("expected baseline T3 profile to keep normal trailing behavior, got %#v", state)
+	}
+	if got := stringValue(state["targetPriceSource"]); got != "trailing-stop" {
+		t.Fatalf("expected baseline profile target source trailing-stop, got %s in %#v", got, state)
+	}
+	if got := parseFloatValue(state["targetPrice"]); got != 149.5 {
+		t.Fatalf("expected unchanged baseline trailing target 149.5, got %v in %#v", got, state)
 	}
 }
 

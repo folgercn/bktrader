@@ -461,6 +461,95 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	}
 }
 
+func TestPretouchT3DeterministicStopGateSelectsHardStopProfile(t *testing.T) {
+	event := domain.PretouchEvent{
+		EventID:           "ETHUSDT_t3_20260515_120500_long",
+		Symbol:            "ETHUSDT",
+		Side:              "long",
+		Speed300sATR:      0.70,
+		Eff300s:           0.90,
+		PreTouchSeconds:   300,
+		TouchExtensionATR: 0.20,
+		RoundtripCostATR:  0.01,
+	}
+	gate := pretouchT3DeterministicStopGate(map[string]any{
+		pretouchShadowT3StopGateEnabledParam: true,
+	}, event)
+	if !boolValue(gate["pass"]) {
+		t.Fatalf("expected deterministic stop gate to pass, got %#v", gate)
+	}
+	profile := mapValue(gate["selectedExitProfile"])
+	if got := stringValue(profile["id"]); got != pretouchT3ExitProfileDeterministicHard3Delay79ID {
+		t.Fatalf("expected selected hard3 delay profile, got %s in %#v", got, profile)
+	}
+	if got := parseFloatValue(profile["hardStopATR"]); got != defaultPretouchShadowT3StopGateHardStopATR {
+		t.Fatalf("expected hardStopATR=%v, got %v", defaultPretouchShadowT3StopGateHardStopATR, got)
+	}
+	if got := parseFloatValue(profile["minHoldSecondsBeforeTrailingSL"]); got != defaultPretouchShadowT3StopGateTrailingDelaySeconds {
+		t.Fatalf("expected trailing delay %v, got %v", defaultPretouchShadowT3StopGateTrailingDelaySeconds, got)
+	}
+
+	blocked := pretouchT3DeterministicStopGate(map[string]any{
+		pretouchShadowT3StopGateEnabledParam: true,
+	}, domain.PretouchEvent{
+		EventID:           event.EventID,
+		Symbol:            event.Symbol,
+		Side:              event.Side,
+		Speed300sATR:      0.70,
+		Eff300s:           0.90,
+		PreTouchSeconds:   300,
+		TouchExtensionATR: 0.60,
+	})
+	if boolValue(blocked["pass"]) {
+		t.Fatalf("expected oversized touch extension to fail, got %#v", blocked)
+	}
+	if got := stringValue(mapValue(blocked["selectedExitProfile"])["id"]); got != pretouchT3ExitProfileBaselineID {
+		t.Fatalf("expected baseline fallback profile, got %s in %#v", got, blocked)
+	}
+}
+
+func TestPretouchTimingEngineAttachesT3StopGateProfileToOverlayIntent(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT3StopGateEnabledParam] = true
+
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(299*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT3StopGateEnabledParam] = true
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected T3 overlay advance-plan, got %#v", decision)
+	}
+	gate := mapValue(decision.Metadata["pretouchT3StopGate"])
+	if !boolValue(gate["pass"]) {
+		t.Fatalf("expected stop gate pass metadata, got %#v", gate)
+	}
+	profile := mapValue(decision.Metadata["pretouchT3ExitProfile"])
+	if got := stringValue(profile["id"]); got != pretouchT3ExitProfileDeterministicHard3Delay79ID {
+		t.Fatalf("expected selected exit profile in decision, got %s in %#v", got, profile)
+	}
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatal("expected live signal intent")
+	}
+	intentProfile := mapValue(intent.Metadata["pretouchT3ExitProfile"])
+	if got := stringValue(intentProfile["id"]); got != pretouchT3ExitProfileDeterministicHard3Delay79ID {
+		t.Fatalf("expected selected exit profile in intent metadata, got %s in %#v", got, intent.Metadata)
+	}
+	intentGate := mapValue(intent.Metadata["pretouchT3StopGate"])
+	if !boolValue(intentGate["pass"]) {
+		t.Fatalf("expected stop gate pass in intent metadata, got %#v", intentGate)
+	}
+}
+
 func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)

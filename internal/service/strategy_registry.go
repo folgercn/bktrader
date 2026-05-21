@@ -1536,6 +1536,7 @@ func refreshLivePositionWatermarks(sessionState map[string]any, currentPosition 
 // trailing-stop logic so callers do not need to duplicate watermark handling.
 func evaluateLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any) map[string]any {
 	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
+	currentPosition = withPretouchT3ExitProfileForLivePosition(parameters, currentPosition, sessionState, watermarks)
 	return deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 }
 
@@ -1562,6 +1563,106 @@ func explainLivePositionUnavailable(currentPosition map[string]any, signalBarSta
 		return "position-unavailable-missing-prev-bar-2"
 	}
 	return "position-unavailable"
+}
+
+func withPretouchT3ExitProfileForLivePosition(parameters map[string]any, currentPosition map[string]any, sessionState map[string]any, watermarks livePositionWatermarks) map[string]any {
+	enriched := cloneMetadata(currentPosition)
+	if len(enriched) == 0 {
+		return enriched
+	}
+	profile, source := resolvePretouchT3ExitProfileForLivePosition(parameters, enriched, sessionState)
+	if len(profile) == 0 || !boolValue(profile["selected"]) {
+		return enriched
+	}
+	asOf := resolvePretouchT3ExitProfileAsOf(sessionState)
+	entryAt := parseOptionalRFC3339(firstNonEmpty(
+		stringValue(profile["entryAt"]),
+		stringValue(profile["entryDispatchedAt"]),
+		stringValue(profile["selectedAt"]),
+	))
+	if entryAt.IsZero() {
+		entryAt = asOf
+		profile["entryTimeSource"] = "profile-asof-fallback"
+	}
+	elapsed := math.Max(0, asOf.Sub(entryAt.UTC()).Seconds())
+	profile["entryAt"] = entryAt.UTC().Format(time.RFC3339)
+	profile["holdElapsedSeconds"] = elapsed
+	profile["holdAsOf"] = asOf.UTC().Format(time.RFC3339)
+	profile["source"] = source
+	if watermarks.PositionKey != "" {
+		profile["watermarkPositionKey"] = watermarks.PositionKey
+	}
+	enriched["pretouchT3ExitProfile"] = profile
+	return enriched
+}
+
+func resolvePretouchT3ExitProfileAsOf(sessionState map[string]any) time.Time {
+	for _, key := range []string{"lastStrategyEvaluationAt", "lastPositionContextRefreshAt", "lastRecoveredPositionAt"} {
+		if parsed := parseOptionalRFC3339(stringValue(sessionState[key])); !parsed.IsZero() {
+			return parsed.UTC()
+		}
+	}
+	return time.Now().UTC()
+}
+
+func resolvePretouchT3ExitProfileForLivePosition(parameters map[string]any, currentPosition map[string]any, sessionState map[string]any) (map[string]any, string) {
+	if !pretouchShadowT3StopGateEnabled(parameters) {
+		return nil, ""
+	}
+	if profile := cloneMetadata(mapValue(currentPosition["pretouchT3ExitProfile"])); boolValue(profile["selected"]) {
+		return profile, "current-position"
+	}
+	livePositionState := cloneMetadata(mapValue(sessionState["livePositionState"]))
+	if len(livePositionState) > 0 && livePositionStateMatchesPositionSnapshot(currentPosition, livePositionState) {
+		if profile := cloneMetadata(mapValue(livePositionState["pretouchT3ExitProfile"])); boolValue(profile["selected"]) {
+			return profile, "live-position-state"
+		}
+	}
+	intent := cloneMetadata(mapValue(sessionState["lastDispatchedIntent"]))
+	if !pretouchT3EntryIntentMatchesPosition(intent, currentPosition) {
+		return nil, ""
+	}
+	profile := cloneMetadata(mapValue(mapValue(intent["metadata"])["pretouchT3ExitProfile"]))
+	if !boolValue(profile["selected"]) {
+		return nil, ""
+	}
+	if entryAt := firstNonEmpty(stringValue(profile["entryAt"]), stringValue(sessionState["lastDispatchedAt"]), stringValue(intent["plannedEventAt"])); entryAt != "" {
+		profile["entryAt"] = entryAt
+		if strings.TrimSpace(stringValue(profile["entryTimeSource"])) == "" {
+			profile["entryTimeSource"] = "last-dispatched-intent"
+		}
+	}
+	return profile, "last-dispatched-entry-intent"
+}
+
+func pretouchT3EntryIntentMatchesPosition(intent map[string]any, currentPosition map[string]any) bool {
+	if len(intent) == 0 || len(currentPosition) == 0 {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(intent["role"])), "entry") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(intent["reason"])), "Pretouch-T3-Overlay") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(stringValue(intent["signalKind"])), "entry-t3-overlay") {
+		return false
+	}
+	intentSymbol := NormalizeSymbol(stringValue(intent["symbol"]))
+	positionSymbol := NormalizeSymbol(stringValue(currentPosition["symbol"]))
+	if intentSymbol != "" && positionSymbol != "" && intentSymbol != positionSymbol {
+		return false
+	}
+	intentSide := strings.ToUpper(strings.TrimSpace(stringValue(intent["side"])))
+	positionSide := strings.ToUpper(strings.TrimSpace(stringValue(currentPosition["side"])))
+	switch intentSide {
+	case "BUY":
+		return positionSide == "" || positionSide == "LONG"
+	case "SELL":
+		return positionSide == "" || positionSide == "SHORT"
+	default:
+		return false
+	}
 }
 
 func deriveLivePositionState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, watermarks livePositionWatermarks) map[string]any {
@@ -1591,12 +1692,21 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	}
 	stopMode := firstNonEmpty(stringValue(parameters["stop_mode"]), "atr")
 	stopLossATR := firstPositive(parseFloatValue(parameters["stop_loss_atr"]), parseFloatValue(parameters["initial_stop_atr"]))
+	pretouchT3ExitProfile := cloneMetadata(mapValue(currentPosition["pretouchT3ExitProfile"]))
+	pretouchT3ExitProfileSelected := boolValue(pretouchT3ExitProfile["selected"])
+	pretouchT3HardStopATR := parseFloatValue(pretouchT3ExitProfile["hardStopATR"])
+	if pretouchT3ExitProfileSelected && pretouchT3HardStopATR > 0 {
+		stopLossATR = pretouchT3HardStopATR
+	}
 	if stopLossATR <= 0 {
 		stopLossATR = 0.05
 	}
 	baseStopLoss := resolveStopPrice(side, entryPrice, sig, stopMode, stopLossATR)
 	stopLoss := baseStopLoss
 	stopLossSource := "initial-stop"
+	if pretouchT3ExitProfileSelected && pretouchT3HardStopATR > 0 {
+		stopLossSource = "hard-stop"
+	}
 	if baseStopLoss > 0 {
 		switch side {
 		case "long":
@@ -1669,12 +1779,24 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 	trailingStopActive := false
 	trailingActivationArmed := false
 	trailingStopCandidate := 0.0
+	trailingStopDelayActive := false
+	trailingStopDelayElapsedSeconds := 0.0
+	trailingStopDelayRemainingSeconds := 0.0
+	trailingStopDelayRequiredSeconds := 0.0
+	if pretouchT3ExitProfileSelected {
+		trailingStopDelayRequiredSeconds = parseFloatValue(pretouchT3ExitProfile["minHoldSecondsBeforeTrailingSL"])
+		trailingStopDelayElapsedSeconds = math.Max(0, parseFloatValue(pretouchT3ExitProfile["holdElapsedSeconds"]))
+		if trailingStopDelayRequiredSeconds > 0 && trailingStopDelayElapsedSeconds < trailingStopDelayRequiredSeconds {
+			trailingStopDelayActive = true
+			trailingStopDelayRemainingSeconds = math.Ceil(trailingStopDelayRequiredSeconds - trailingStopDelayElapsedSeconds)
+		}
+	}
 	trailStartR := parseFloatValue(parameters["trail_start_r"])
 	trailBufferATR := parseFloatValue(parameters["trail_buffer_atr"])
 	if trailStartR > 0 && trailBufferATR > 0 {
 		trailingStopConfigured = trailBufferATR
 		trailingActivationArmed = true
-		if riskDistance > 0 && riskMultiple >= trailStartR && sig.ATR > 0 {
+		if !trailingStopDelayActive && riskDistance > 0 && riskMultiple >= trailStartR && sig.ATR > 0 {
 			trailingStopActive = true
 			if side == "long" {
 				trailingSL := hwm - trailBufferATR*sig.ATR
@@ -1707,6 +1829,9 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 			if profitATR < delayedActivation {
 				isActive = false
 			}
+		}
+		if trailingStopDelayActive {
+			isActive = false
 		}
 
 		if isActive && sig.ATR > 0 {
@@ -1743,34 +1868,44 @@ func deriveLivePositionState(parameters map[string]any, currentPosition map[stri
 			protected = true
 		}
 	}
-	return map[string]any{
-		"found":                   true,
-		"symbol":                  NormalizeSymbol(stringValue(currentPosition["symbol"])),
-		"side":                    strings.ToUpper(side),
-		"entryPrice":              entryPrice,
-		"baseStopLoss":            baseStopLoss,
-		"stopLoss":                stopLoss,
-		"stopLossSource":          stopLossSource,
-		"riskDistance":            riskDistance,
-		"riskMultiple":            riskMultiple,
-		"breakevenStopActive":     breakevenStopActive,
-		"breakevenStopCandidate":  breakevenStopCandidate,
-		"trailingStopConfigured":  trailingStopConfigured > 0,
-		"trailingStopActive":      trailingStopActive,
-		"trailingActivationArmed": trailingActivationArmed,
-		"trailingStopCandidate":   trailingStopCandidate,
-		"trailStartR":             trailStartR,
-		"trailBufferATR":          trailBufferATR,
-		"protected":               protected,
-		"protectionTrigger":       protectionPrice,
-		"prevHigh1":               sig.PrevHigh1,
-		"prevLow1":                sig.PrevLow1,
-		"atr14":                   sig.ATR,
-		"profitProtectATR":        profitProtectATR,
-		"hwm":                     hwm,
-		"lwm":                     lwm,
-		"watermarkPositionKey":    watermarks.PositionKey,
+	state := map[string]any{
+		"found":                             true,
+		"symbol":                            NormalizeSymbol(stringValue(currentPosition["symbol"])),
+		"side":                              strings.ToUpper(side),
+		"entryPrice":                        entryPrice,
+		"baseStopLoss":                      baseStopLoss,
+		"stopLoss":                          stopLoss,
+		"stopLossSource":                    stopLossSource,
+		"riskDistance":                      riskDistance,
+		"riskMultiple":                      riskMultiple,
+		"breakevenStopActive":               breakevenStopActive,
+		"breakevenStopCandidate":            breakevenStopCandidate,
+		"trailingStopConfigured":            trailingStopConfigured > 0,
+		"trailingStopActive":                trailingStopActive,
+		"trailingActivationArmed":           trailingActivationArmed,
+		"trailingStopCandidate":             trailingStopCandidate,
+		"trailingStopDelayActive":           trailingStopDelayActive,
+		"trailingStopDelayElapsedSeconds":   trailingStopDelayElapsedSeconds,
+		"trailingStopDelayRemainingSeconds": trailingStopDelayRemainingSeconds,
+		"trailingStopDelayRequiredSeconds":  trailingStopDelayRequiredSeconds,
+		"trailStartR":                       trailStartR,
+		"trailBufferATR":                    trailBufferATR,
+		"protected":                         protected,
+		"protectionTrigger":                 protectionPrice,
+		"prevHigh1":                         sig.PrevHigh1,
+		"prevLow1":                          sig.PrevLow1,
+		"atr14":                             sig.ATR,
+		"profitProtectATR":                  profitProtectATR,
+		"hwm":                               hwm,
+		"lwm":                               lwm,
+		"watermarkPositionKey":              watermarks.PositionKey,
 	}
+	if pretouchT3ExitProfileSelected {
+		state["pretouchT3ExitProfile"] = pretouchT3ExitProfile
+		state["pretouchT3ExitProfileSelected"] = true
+		state["exitProfile"] = stringValue(pretouchT3ExitProfile["id"])
+	}
+	return state
 }
 
 func updateLivePositionWatermarks(sessionState map[string]any, currentPosition map[string]any, marketPrice float64) (float64, float64) {
@@ -1780,6 +1915,7 @@ func updateLivePositionWatermarks(sessionState map[string]any, currentPosition m
 
 func evaluateLiveExitState(parameters map[string]any, currentPosition map[string]any, signalBarState map[string]any, marketPrice float64, sessionState map[string]any, nextReason string) map[string]any {
 	watermarks := refreshLivePositionWatermarks(sessionState, currentPosition, marketPrice)
+	currentPosition = withPretouchT3ExitProfileForLivePosition(parameters, currentPosition, sessionState, watermarks)
 	positionState := deriveLivePositionState(parameters, currentPosition, signalBarState, marketPrice, watermarks)
 	if len(positionState) == 0 {
 		waitReason := explainLivePositionUnavailable(currentPosition, signalBarState)

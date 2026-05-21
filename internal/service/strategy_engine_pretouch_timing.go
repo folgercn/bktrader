@@ -23,7 +23,8 @@ const (
 	pretouchShadowLeadQuantityBandSizingParam = "pretouchShadowLeadQuantityBandSizing"
 	pretouchShadowOverlayQualitySizingParam   = "pretouchShadowOverlayQualitySizing"
 	pretouchShadowOverlayQualityFallbackParam = "pretouchShadowOverlayQualityFallbackSubmit"
-	defaultPretouchShadowCandidateID          = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_20260520"
+	pretouchShadowT3StopGateEnabledParam      = "pretouchShadowT3StopGateEnabled"
+	defaultPretouchShadowCandidateID          = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_det_stop_gate_20260521"
 	defaultPretouchShadowLeadScale            = 1.5
 	defaultPretouchShadowLeadQuantityMinQty   = 0.20
 	defaultPretouchShadowLeadQuantityMaxQty   = 0.40
@@ -45,6 +46,24 @@ const (
 	defaultPretouchShadowStrict10Pct          = 35.521555
 	defaultPretouchShadowStrict15Pct          = 28.970948
 	defaultPretouchShadowSevere15Pct          = 21.231073
+
+	pretouchShadowT3StopGateMinAbsSpeed300sATRParam        = "pretouchShadowT3StopGateMinAbsSpeed300sATR"
+	pretouchShadowT3StopGateMinEff300sParam                = "pretouchShadowT3StopGateMinEff300s"
+	pretouchShadowT3StopGateMinPreTouchSecondsParam        = "pretouchShadowT3StopGateMinPreTouchSeconds"
+	pretouchShadowT3StopGateMaxPreTouchSecondsParam        = "pretouchShadowT3StopGateMaxPreTouchSeconds"
+	pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam   = "pretouchShadowT3StopGateMaxAbsTouchExtensionATR"
+	pretouchShadowT3StopGateHardStopATRParam               = "pretouchShadowT3StopGateHardStopATR"
+	pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam = "pretouchShadowT3StopGateMinHoldSecondsBeforeTrailingSL"
+
+	defaultPretouchShadowT3StopGateMinAbsSpeed300sATR      = 0.65
+	defaultPretouchShadowT3StopGateMinEff300s              = 0.85
+	defaultPretouchShadowT3StopGateMinPreTouchSeconds      = 250.0
+	defaultPretouchShadowT3StopGateMaxPreTouchSeconds      = 900.0
+	defaultPretouchShadowT3StopGateMaxAbsTouchExtensionATR = 0.40
+	defaultPretouchShadowT3StopGateHardStopATR             = 3.0
+	defaultPretouchShadowT3StopGateTrailingDelaySeconds    = 4740.0
+	pretouchT3ExitProfileBaselineID                        = "pr447_lifecycle_baseline"
+	pretouchT3ExitProfileDeterministicHard3Delay79ID       = "deterministic_stop_gate_hard3_delay_trailing_79m"
 )
 
 // bkLiveEthPretouchTimingEngine implements the ETH pretouch timing strategy.
@@ -475,6 +494,8 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	if len(closedBars) >= 3 {
 		prevBar3Snapshot = pretouchBarSnapshot(&closedBars[len(closedBars)-3])
 	}
+	stopGate := pretouchT3DeterministicStopGate(ctx.ExecutionContext.Parameters, result.Event)
+	exitProfile := cloneMetadata(mapValue(stopGate["selectedExitProfile"]))
 	signalBarStateKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKeyForKind(ctx.ExecutionContext.Symbol, "1h", currentBar, "entry-t3-overlay")
 	signalBarDecision := map[string]any{
@@ -492,12 +513,16 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 		"prevBar2":                    prevBar2Snapshot,
 		"prevBar3":                    prevBar3Snapshot,
 		"pretouchShadowOverlaySizing": cloneMetadata(overlaySizing),
+		"pretouchT3StopGate":          cloneMetadata(stopGate),
+		"pretouchT3ExitProfile":       cloneMetadata(exitProfile),
 	}
 
 	metadata := map[string]any{
 		"pretouchEvent":                 result.Event,
 		"pretouchEventShape":            "t3_swing",
 		"pretouchShadowOverlaySizing":   overlaySizing,
+		"pretouchT3StopGate":            stopGate,
+		"pretouchT3ExitProfile":         exitProfile,
 		"suggestedQuantity":             overlayQuantity,
 		"productionSuggestedQuantity":   0.0,
 		"signalSource":                  "pretouch-t3-overlay-shadow",
@@ -866,6 +891,95 @@ func pretouchT3OverlayFeatureValue(event domain.PretouchEvent, name string, lead
 			return value, true
 		}
 		return 0, false
+	}
+}
+
+func pretouchShadowT3StopGateEnabled(parameters map[string]any) bool {
+	if _, ok := parameters[pretouchShadowT3StopGateEnabledParam]; !ok {
+		return false
+	}
+	return boolValue(parameters[pretouchShadowT3StopGateEnabledParam])
+}
+
+func pretouchT3DeterministicStopGate(parameters map[string]any, event domain.PretouchEvent) map[string]any {
+	enabled := pretouchShadowT3StopGateEnabled(parameters)
+	minAbsSpeed := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMinAbsSpeed300sATRParam]), defaultPretouchShadowT3StopGateMinAbsSpeed300sATR)
+	minEff := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMinEff300sParam]), defaultPretouchShadowT3StopGateMinEff300s)
+	minPreTouch := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMinPreTouchSecondsParam]), defaultPretouchShadowT3StopGateMinPreTouchSeconds)
+	maxPreTouch := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMaxPreTouchSecondsParam]), defaultPretouchShadowT3StopGateMaxPreTouchSeconds)
+	maxAbsExtension := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam]), defaultPretouchShadowT3StopGateMaxAbsTouchExtensionATR)
+	hardStopATR := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateHardStopATRParam]), defaultPretouchShadowT3StopGateHardStopATR)
+	trailingDelaySeconds := firstPositive(parseFloatValue(parameters[pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam]), defaultPretouchShadowT3StopGateTrailingDelaySeconds)
+
+	absSpeed := math.Abs(event.Speed300sATR)
+	absExtension := math.Abs(event.TouchExtensionATR)
+	failedRules := []string{}
+	if !enabled {
+		failedRules = append(failedRules, "gate_disabled")
+	}
+	if absSpeed < minAbsSpeed {
+		failedRules = append(failedRules, "speed_300s_abs_below_min")
+	}
+	if event.Eff300s < minEff {
+		failedRules = append(failedRules, "eff_300s_below_min")
+	}
+	if event.PreTouchSeconds < minPreTouch {
+		failedRules = append(failedRules, "pre_touch_seconds_below_min")
+	}
+	if maxPreTouch > 0 && event.PreTouchSeconds > maxPreTouch {
+		failedRules = append(failedRules, "pre_touch_seconds_above_max")
+	}
+	if absExtension > maxAbsExtension {
+		failedRules = append(failedRules, "touch_extension_abs_above_max")
+	}
+	pass := enabled && len(failedRules) == 0
+	profileID := pretouchT3ExitProfileBaselineID
+	selected := false
+	if pass {
+		profileID = pretouchT3ExitProfileDeterministicHard3Delay79ID
+		selected = true
+	}
+	exitProfile := map[string]any{
+		"id":                                    profileID,
+		"eventSource":                           "t3_swing",
+		"selected":                              selected,
+		"selector":                              "deterministic_stop_gate",
+		"fallbackProfile":                       pretouchT3ExitProfileBaselineID,
+		"hardStopATR":                           0.0,
+		"minHoldSecondsBeforeTrailingSL":        0.0,
+		"delayTrailingUpdatesBeforeHoldSeconds": 0.0,
+	}
+	if selected {
+		exitProfile["hardStopATR"] = hardStopATR
+		exitProfile["minHoldSecondsBeforeTrailingSL"] = trailingDelaySeconds
+		exitProfile["delayTrailingUpdatesBeforeHoldSeconds"] = trailingDelaySeconds
+	}
+	return map[string]any{
+		"name":        "deterministic_stop_gate",
+		"enabled":     enabled,
+		"pass":        pass,
+		"decision":    map[bool]string{true: "selected", false: "baseline"}[pass],
+		"failedRules": failedRules,
+		"features": map[string]any{
+			"speed_300s_atr":      event.Speed300sATR,
+			"speed_300s_abs_atr":  absSpeed,
+			"eff_300s":            event.Eff300s,
+			"pre_touch_seconds":   event.PreTouchSeconds,
+			"touch_extension_atr": event.TouchExtensionATR,
+			"touch_extension_abs": absExtension,
+			"roundtrip_cost_atr":  event.RoundtripCostATR,
+			"side":                event.Side,
+			"eventId":             event.EventID,
+		},
+		"thresholds": map[string]any{
+			"min_abs_speed_300s_atr":      minAbsSpeed,
+			"min_eff_300s":                minEff,
+			"min_pre_touch_seconds":       minPreTouch,
+			"max_pre_touch_seconds":       maxPreTouch,
+			"max_abs_touch_extension_atr": maxAbsExtension,
+		},
+		"selectedExitProfile": exitProfile,
+		"exitProfile":         exitProfile,
 	}
 }
 

@@ -14,15 +14,16 @@
 
 ## 当前 research lead / testnet shadow target
 
-截至 2026-05-20，后续文档、research 扩展和生产排障中，未特别说明时，`research lead`
+截至 2026-05-21，后续文档、research 扩展和生产排障中，未特别说明时，`research lead`
 默认指当前 risk-on shadow bundle：**原 2026-05-15 ETH pretouch lead + lead `0.20..0.40 ETH`
-quantity-band 条件仓位放大 + T3 overlay `2.0x` + T3 专用 RF/cost quality sizing**。原来的 2026-05-15 production-aligned lead 以后在本文档中
+quantity-band 条件仓位放大 + T3 overlay `2.0x` + T3 专用 RF/cost quality sizing +
+T3 deterministic stop-gate lifecycle overlay**。原来的 2026-05-15 production-aligned lead 以后在本文档中
 统一称为 `base lead` / `original lead`；只有做历史对照或保守基线时才单独引用它。
 
 | 维度 | 固化口径 |
 | --- | --- |
-| Current research lead | `lead_q020_q040_overlay_q020_q040_t3_rf_cost_20260520` |
-| 组合定义 | `base lead` + `pretouchShadowLeadQuantityBandSizing=true` (`0.20..0.40 ETH`) + `pretouchShadowOverlayScale=2.0` + `pretouchShadowOverlayQualitySizing=true` |
+| Current research lead | `lead_q020_q040_overlay_q020_q040_t3_rf_cost_det_stop_gate_20260521` |
+| 组合定义 | `base lead` + `pretouchShadowLeadQuantityBandSizing=true` (`0.20..0.40 ETH`) + `pretouchShadowOverlayScale=2.0` + `pretouchShadowOverlayQualitySizing=true` + T3 deterministic stop gate selector |
 | Base / original lead | `Timing-Probability Unified Framework / ETH Pretouch Timing` |
 | 决策报告 | `research/entry_redesign/scripts/output/timing_probability_unified/20260515_unified_framework_decision_report.md` |
 | Canonical event source | `pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1` |
@@ -39,20 +40,33 @@ quantity-band 条件仓位放大 + T3 overlay `2.0x` + T3 专用 RF/cost quality
 | T3 overlay model version | `20260520_t3_overlay_rf_cost_v1` (`trained_at=2026-05-20T00:00:00Z`) |
 | T3 overlay model features | `rf_probability`, `speed_300s_abs`, `eff_300s`, `touch_extension_abs`, `pre_touch_seconds`, `roundtrip_cost_atr`, `side_is_short` |
 | T3 overlay model metrics | accumulated-history `training_rows=71`, `rf_accuracy=0.873239`; walk-forward quantity-band evidence: overlay `45.639102%`, base adverse10 + overlay `68.610750%`, delta `+34.236470pp` vs fixed overlay |
+| T3 lifecycle lead | deterministic rule `abs(speed_300s_atr) >= 0.65`、`eff_300s >= 0.85`、`250 <= pre_touch_seconds <= 900`、`abs(touch_extension_atr) <= 0.40`；这个 rule 是选择器，不是出场动作 |
+| T3 selected stop action | deterministic rule 命中的 T3 events 使用 `delay_trailing_updates_79m + hard_stop_atr_3.0`；未命中的 T3 events 继续走 PR447 lifecycle |
+| T3 lifecycle metrics | overlay `55.460787%` vs PR447 overlay `45.639101%`，lift `+9.821686pp`；max DD `-4.602568%`、worst trade `-0.557532%`、worst MAE `-276.224267bp` 与 PR447 headline risk 持平 |
 | Testnet shadow status | `testnet_shadow_collect`，只允许 Binance Futures testnet / `sandbox=true` 下采样，不是 mainnet live candidate |
 | Lead sizing | `productionSuggestedQuantity` 先由 RF probability / cost penalty 生成；shadow guard 通过时再按 production/max-production quality score 映射到 `0.20..0.40 ETH` |
 | T3 overlay sizing | 独立 `entry-t3-overlay` event source，先形成固定基准 `pretouchBaseOrderQuantity * 0.40 * 2.0 = 0.080 ETH`，再由 T3 RF/cost quality 直接映射到绝对数量 `0.20..0.40 ETH` |
 | Production live delta | Report spec 的 `trail_start=0.9` 已按 base lead 建议在模板侧固化为 `trail_start_r=1.5`; live template 使用 `max_hold_hours=2.0`、`pretouchBaseShare=0.80` |
 
 当前 `research lead` 的身份由 **base event source + model version + live engine/template 参数 +
-shadow risk-on 参数**共同定义，不由单个收益数字定义。当前生产 testnet shadow 对齐的不是
+shadow risk-on 参数 + T3 lifecycle selection rule**共同定义，不由单个收益数字定义。当前生产 testnet shadow 对齐的不是
 2026-05-13 的 `local_context_event_execution` union lead，也不是旧 V6 `candidate_001` /
 `reentry_window` baseline。需要复现这些历史对照组或只复现 `base lead` 时，必须在实验说明中显式标注。
 
+术语边界：
+
+- `deterministic stop gate` 是 **选择器**：只决定哪些 T3 overlay event 有资格切换出场生命周期。
+- `delay_trailing_updates_79m + hard_stop_atr_3.0` 是 **被选择后的出场动作**：延迟更新 trailing stop，
+  但保留 hard stop；它不是“持仓 79 分钟不许止损”。
+- research 产物里出现的 `min_hold_sl_60m` / `PR447 min_hold_sl_60m` 是历史回测命名。实盘对齐时不能把它
+  直接翻译成“全 SL 分支 min-hold”，否则会错误阻断 catastrophic / hard stop。
+
 ### Research Lead 收益口径锁定
 
-2026-05-20 更新后，`research lead` 默认不再等同于 `base_lead_same_close` 或单独的
-`base_lead_adverse10_exact`，而是 `base lead + lead 0.20..0.40 ETH quantity-band shadow sizing + T3 overlay 2.0x + T3 RF/cost quantity-band shadow sizing`。下表先保留 base lead
+2026-05-21 更新后，`research lead` 默认不再等同于 `base_lead_same_close`、单独的
+`base_lead_adverse10_exact`，也不再只等同于 PR447 的 T3 RF/cost quantity-band sizing。当前口径是
+`base lead + lead 0.20..0.40 ETH quantity-band shadow sizing + T3 overlay 2.0x +
+T3 RF/cost quantity-band shadow sizing + T3 deterministic stop-gate lifecycle overlay`。下表先保留 base lead
 作为对照，避免后续把 `research lead`、`same_close`、`adverse10` 和 walk-forward/monthly gate 结果混用：
 
 | 口径 | Calendar sum | Worst month | Negative months | Trades | 说明 |
@@ -66,7 +80,11 @@ shadow risk-on 参数**共同定义，不由单个收益数字定义。当前生
 | --- | ---: | --- | --- |
 | `lead_quantity_0p20_0p40_adverse10` | `61.070916%` | 固定 canonical lead adverse10 ledger，只把 submitted lead quantity 按 live shadow 公式映射到 `0.20..0.40 ETH` | 正式 T2 quantity-band 线性 notional 回测口径；相对 `base_lead_adverse10_exact` lift `+38.099268pp`，相对旧 `lead 1.5x` lift `+26.613444pp`。 |
 | `t3_rf_cost_quantity_0p20_0p40_exact_lead` | `68.610750%` | `base_lead_adverse10_exact` + T3 RF/cost walk-forward quantity band `0.20..0.40 ETH` | T3 quantity-band 证据；不是 mainnet promotion 结果，需 testnet fill/depth 验真。 |
-| `lead_q020_q040_plus_t3_q020_q040` | `106.710018%` | `lead_quantity_0p20_0p40_adverse10` + `t3_rf_cost_quantity_0p20_0p40`，按月 additive bundle | 当前 risk-on shadow headline 口径；worst month `-1.464655%`、negative month `1`、event-order DD `-4.682954%`，仍未建模更大 submitted quantity 的额外冲击。 |
+| `t3_pr447_min_hold_sl_60m_overlay_q020_q040` | `45.639101%` | PR447 T3 RF/cost quantity-band overlay baseline；研究名保留 `min_hold_sl_60m`，但 live 对齐时不得实现成全局阻断 hard stop 的 min-hold SL | 当前 deterministic lifecycle lead 的对照基线。 |
+| `t3_deterministic_stop_gate_overlay_q020_q040` | `55.460787%` | T3 overlay events 默认走 PR447 lifecycle，只有 deterministic rule 命中的 5 个 event 切到 `delay_trailing_updates_79m + hard_stop_atr_3.0` | 当前 T3 lifecycle research lead；相对 PR447 overlay lift `+9.821686pp`，DD / worst trade / worst MAE 维持 PR447 headline risk。 |
+| `base_lead_adverse10_plus_t3_deterministic_stop_gate` | `78.432435%` | `base_lead_adverse10_exact` + deterministic T3 lifecycle overlay | 保守 base lead + 新 T3 lifecycle 的组合口径；用于和 PR447 `68.610750%` 对照。 |
+| `lead_q020_q040_plus_t3_q020_q040_pr447` | `106.710018%` | `lead_quantity_0p20_0p40_adverse10` + PR447 `t3_rf_cost_quantity_0p20_0p40`，按月 additive bundle | PR447 sizing/lifecycle headline；worst month `-1.464655%`、negative month `1`、event-order DD `-4.682954%`，仍未建模更大 submitted quantity 的额外冲击。 |
+| `lead_q020_q040_plus_t3_deterministic_stop_gate` | `116.531703%` | `lead_quantity_0p20_0p40_adverse10` + `t3_deterministic_stop_gate_overlay_q020_q040`，按月 additive bundle | 当前 research lead headline 口径；相对 PR447 headline lift `+9.821686pp`。按 rounded 月度账本重算，worst month 约 `-1.107464%`、negative month `1`；额外 slippage/depth degradation 仍未建模。 |
 | `legacy_lead_1p5_overlay_2p0_strict15` | `28.970948%` | 旧 `lead_scale=1.5`、`overlay_scale=2.0`、strict impact proxy、15bp pressure | 历史连续性对照，不再代表当前 `research lead`。 |
 
 可复算 artifact：
@@ -78,6 +96,9 @@ shadow risk-on 参数**共同定义，不由单个收益数字定义。当前生
 - `research/entry_redesign/scripts/output/timing_probability_unified/t2_lead_quantity_band_sizing_20260520/t2_lead_quantity_band_summary.json`
 - `research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_lead_exact_exposure/lead_exact_adverse10_exposure_windows.csv`
 - `research/entry_redesign/scripts/output/timing_probability_unified/breakout_structure_lead_expansion_combo_report.md`
+- `research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_smart_stop_policy_sweep_20260521/t3_overlay_smart_stop_policy_sweep_report.md`
+- `research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_deterministic_stop_gate_stability_20260521/t3_overlay_deterministic_stop_gate_stability_report.md`
+- `research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_deterministic_stop_gate_stability_20260521/t3_overlay_deterministic_stop_gate_summary.json`
 
 2026-05-19 已补齐 lead exact exposure ledger：用同一 production-aligned replay 重建 selected
 `DelayResult` 的 `entry_time` / `exit_time`，并与 compact adverse10 lead ledger 做 parity 校验。
@@ -325,6 +346,48 @@ quality 后 intent quantity 直接使用 `0.20..0.40` ETH absolute band。若 `p
 时，才允许同一 guard 下提交 fixed `0.080` ETH overlay fallback；默认模板保持 false，避免同一
 candidateID 混入 fixed overlay 与 RF/cost quantity-band 样本。
 
+#### T3 deterministic stop-gate lifecycle overlay
+
+2026-05-21 的最新 T3 lifecycle research lead 不是新增 entry event source，也不是替换 T3 RF/cost
+quality sizing。它只是在 T3 overlay event 已经入场后，用一个可解释 deterministic selector 决定是否切换
+出场生命周期：
+
+```text
+abs(speed_300s_atr) >= 0.65
+eff_300s >= 0.85
+250 <= pre_touch_seconds <= 900
+abs(touch_extension_atr) <= 0.40
+```
+
+组合方式：
+
+- Gate 未命中：T3 overlay 继续走 PR447 lifecycle baseline。
+- Gate 命中：只对该 T3 event 切换到 `delay_trailing_updates_79m + hard_stop_atr_3.0`。
+- `delay_trailing_updates_79m` 的含义是延迟 trailing-stop 更新，不是阻断 hard stop；`hard_stop_atr_3.0`
+  从入场后就作为 catastrophic / hard stop 生效。
+- 不把 research 文件名里的 `min_hold_sl_60m` 直译成 live 里的全 SL min-hold。实盘对齐时必须保留 hard stop
+  可立即触发，只延后 trailing ratchet。
+- RF 1.0 gate、ExtraTrees gate 和 dynamic hard-stop schedule 都保留为 research 对照，不作为当前 live 对齐 lead。
+
+当前证据：
+
+| Policy | Overlay | Worst Month | Neg Months | Max DD | Hard3 Events | Worst Trade | P90 Hold | Worst MAE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| PR447 lifecycle baseline | `45.639101%` | `-3.088880%` | `3` | `-4.602568%` | `0` | `-0.557532%` | `4359.80s` | `-276.224267bp` |
+| RF 1.0 + selected hard-stop action | `52.291662%` | `-3.088880%` | `3` | `-4.602568%` | `5` | `-0.557532%` | `4740.00s` | `-276.224267bp` |
+| Deterministic gate + selected hard-stop action | `55.460787%` | `-3.088880%` | `2` | `-4.602568%` | `5` | `-0.557532%` | `4755.60s` | `-276.224267bp` |
+
+Stability checks:
+
+- 49 条 threshold-neighborhood rules 中，31 条在保持 PR447 headline DD / worst-trade / MAE 的同时跑赢 PR447。
+- Chronological split 仍双边改善：early `+5.382401pp`，late `+4.439285pp`。
+- Leave-one-month-out 全部跑赢 PR447；最弱 delta 是 drop 2026-02 后仍 `+5.709936pp`。
+- Dynamic hard-stop 当前拒绝：全局应用会牺牲太多 realized return；作为 gated replacement 虽略增 overlay
+  到 `55.866415%`，但 worst trade 从 `-0.557532%` 恶化到 `-2.249838%`。
+
+因此当前 live 对齐前的 research lead 是 **deterministic selector + selected hard-stop action**：
+selector 是 deterministic gate，action 是 `delay_trailing_updates_79m + hard_stop_atr_3.0`。
+
 #### 预期收益与风险预算
 
 这些收益数字是 **research / proxy 预期**，不是 testnet shadow 实盘收益承诺：
@@ -336,8 +399,10 @@ candidateID 混入 fixed overlay 与 RF/cost quantity-band 样本。
 | 2.0x T3 overlay + exact lead | `34.374280%` | `27.823672%` | `24.548369%` | `21.273065%` | 10-15bp 仍有 lift，20bp kill-stress 失败 |
 | T3 RF/cost 0.75-1.25x overlay + exact lead | - | `35.945786%` | - | - | 历史小 band 对照；T3 专用 walk-forward RF/cost sizing 比 fixed overlay `+1.571506pp`，但数量只有 `0.06..0.10` ETH，已不是当前 risk-on shadow target。 |
 | T3 RF/cost 0.20-0.40 ETH overlay + exact lead | - | `68.610750%` | - | - | 用户确认可承受更大回撤后的 aggressive shadow sizing；overlay leg `45.639102%`，delta vs fixed `+34.236470pp`，worst month `-3.088880%`，DD `-4.602568%`。 |
+| T3 deterministic stop gate + exact lead | - | `78.432435%` | - | - | 在 PR447 T3 RF/cost quantity-band 基础上，只替换 deterministic gate 命中的 5 个 T3 event lifecycle；相对 PR447 `68.610750%` lift `+9.821686pp`。 |
 | T2 lead 0.20-0.40 ETH quantity-band | - | `61.070916%` | - | - | 正式 T2 quantity-band adverse10 线性 notional 口径；相对 base `+38.099268pp`，相对旧 `lead 1.5x` `+26.613444pp`。 |
-| T2 lead 0.20-0.40 + T3 RF/cost 0.20-0.40 | - | `106.710018%` | - | - | 当前 risk-on shadow headline；按月 additive bundle，worst month `-1.464655%`，event-order DD `-4.682954%`。 |
+| T2 lead 0.20-0.40 + T3 RF/cost 0.20-0.40 | - | `106.710018%` | - | - | PR447 risk-on shadow headline；按月 additive bundle，worst month `-1.464655%`，event-order DD `-4.682954%`。 |
+| T2 lead 0.20-0.40 + T3 deterministic stop gate | - | `116.531703%` | - | - | 当前 research lead headline；相对 PR447 risk-on shadow headline lift `+9.821686pp`，按 rounded 月度账本 worst month 约 `-1.107464%`、negative month `1`。 |
 | 1.5x lead scale + 2.0x overlay strict impact proxy | - | `35.521555%` | `28.970948%` | `22.420341%` | 上一轮 lead-scale reference；15bp 跑赢基线，20bp 回到基线附近；当前只作历史连续性对照。 |
 | 2.0x lead scale + 2.0x overlay strict impact proxy | - | `31.024442%` | `24.473835%` | `17.923227%` | 不如 1.5x，不能继续推高 lead target |
 | Severe thin-book proxy (`1.5x/2.0x`) | - | `27.781680%` | `21.231073%` | `14.680465%` | severe 15/20bp 必须阻断放大 |
@@ -352,8 +417,10 @@ Shadow 阶段的目标收益区间可以写成：
 - T3 overlay 走 `0.20..0.40 ETH` absolute quantity band 的 walk-forward evidence 为
   `base_lead_adverse10_exact + overlay = 68.610750%`，但 worst month 扩大到 `-3.088880%`、
   DD 扩大到 `-4.602568%`。
-- 当前 combined headline 为 `lead_q020_q040_plus_t3_q020_q040 = 106.710018%`，worst month
-  `-1.464655%`、negative month `1`、event-order DD `-4.682954%`。它仍是线性 notional
+- Deterministic stop-gate lifecycle overlay 把 T3 overlay 从 PR447 的 `45.639101%` 提升到
+  `55.460787%`，在当前样本中保持 PR447 headline DD / worst trade / worst MAE。
+- 当前 combined headline 为 `lead_q020_q040_plus_t3_deterministic_stop_gate = 116.531703%`，
+  worst month 约 `-1.107464%`、negative month `1`。它仍是线性 notional
   口径，没有额外建模更大 submitted quantity 的 slippage/depth degradation，因此只适合
   testnet shadow 验真，不得跳过 fill/depth telemetry 直接成为 mainnet candidate。
 - 若真实 fill/depth 校准后 15bp strict proxy 回落到 `base_lead_adverse10_exact` 以下，或者 20bp /
@@ -367,7 +434,8 @@ Shadow 阶段的目标收益区间可以写成：
 | --- | --- | --- |
 | Research lead 身份已锁定 | base event/model + lead `0.20..0.40 ETH` quantity band + T3 overlay `0.20..0.40 ETH` RF/cost quality artifact + testnet shadow guard 已写入本文档 | pass |
 | 保守基线可复算 | `base_lead_adverse10_exact=22.971648%`，62 trades，0 negative months | pass |
-| Quantity-band formal report 有 lift | T2/lead qband `61.070916%` > baseline；bundle `106.710018%` > `base lead + T3 qband` | pass |
+| Quantity-band formal report 有 lift | T2/lead qband `61.070916%` > baseline；PR447 bundle `106.710018%` > `base lead + T3 qband` | pass |
+| Deterministic lifecycle gate 有 lift | T3 overlay `55.460787%` > PR447 `45.639101%`，headline DD / worst trade / worst MAE 不恶化 | pass |
 | Kill-stress 没被误通过 | severe 15bp `21.231073%` fail，strict 20bp `22.420341%` 不再提供足够 lift | pass |
 | Live telemetry 方向 | 旧 `1.5x` 样本 `6/6` combined pass；`0.20..0.40 ETH` qband 需要重新累计 | pass for shadow, blocks live candidate |
 | Live telemetry 样本数 | `6 < 30` | blocks live candidate |
@@ -397,7 +465,9 @@ Kill gate：
 - 仅当 risk-on 未显式关闭、live 语义、账户 binding `sandbox=true`、`executionMode=rest`、
   shadow pre-submit guard 通过时，submitted proposal quantity 才进入 `0.20..0.40 ETH` lead quantity band；否则等于当前 production sizing。
 - T3 overlay 只在 original_t2 未触发时检测；通过 `pretouchShadowSubmitOverlayOrder=false` 可显式关闭。T3 RF/cost quality sizing 可用 `pretouchShadowOverlayQualitySizing=false` 显式关闭。它不会在同一次 decision 里派发第二张订单，也不修改 lead 的 production semantics；overlay 使用独立 trade-limit key suffix 但保留同一基础 signal bar state key。
-- T3 overlay shadow 当前只接 initial entry proposal；research 中的 T3 reentry schedule 后续腿和 `min_hold_sl_60m` exit override 仍未提升为 Go live 行为，出场继续走现有 pretouch live risk-exit 逻辑。
+- T3 overlay shadow 当前只接 initial entry proposal；research 中的 T3 reentry schedule 后续腿仍未提升为 Go live 行为。
+  T3 deterministic stop-gate lifecycle overlay 是下一步 live 对齐候选，但实现时必须保持 selector/action 分层：
+  deterministic gate 只选择 event，selected action 只延迟 trailing updates 并保留 hard stop 立即可触发。
 - 保持 `sandbox=true` testnet 范围；不改 mainnet、不改全局默认 `dispatchMode`、不改 BTC 策略语义。
 - 若需要 `auto-dispatch` 采集真实 fill drift，必须由 session 创建参数显式指定；模板或 runtime 不得静默升级。
 - 实现 PR 必须覆盖 `no_model_loaded`、fallback sizing、intent quantity 不被 fixed quantity 覆盖、sandbox
@@ -558,6 +628,19 @@ PYTHONPATH=research:research/entry_redesign/scripts \
 - `max_hold_hours` 当前在模板、参数归一化和 research artifact 中保留，但 live runtime 暂未新增
   定时强平路径；如果要把 max-hold 也接入实盘，需要单独 PR 处理 entry time 来源、重启恢复和
   reduce-only MARKET exit 审计。
+
+2026-05-21 T3 deterministic stop-gate 对齐点：
+
+- 这不是新的 entry gate；entry 仍由 T3 swing + T3 RF/cost quality sizing 决定。
+- deterministic gate 只在 T3 overlay position 的 exit profile 选择阶段使用，输入为 live 已有/应记录的
+  `speed_300s_atr`、`eff_300s`、`pre_touch_seconds`、`touch_extension_atr`。
+- Gate 未命中时，exit profile 不变，继续使用 PR447 lifecycle baseline。
+- Gate 命中时，exit profile 切换为 `hard_stop_atr=3.0` 且 `min_hold_seconds_before_trailing_sl=4740`。
+  这个参数名应表达“只延迟 trailing-stop 更新”，不得复用会阻断 hard stop 的 `min_hold_seconds_before_sl`
+  语义。
+- Hard stop 必须从 position open 起立即有效；任何 live 实现都不得把 79m 解释成全止损 min-hold。
+- Metadata/trace 需要记录 deterministic gate 的 pass/fail、四个 feature 值、阈值、selected exit profile，
+  以及是否 fallback 到 PR447 baseline，便于 testnet/prod 逐单审计。
 
 ## Breakout 结构展开基准
 
