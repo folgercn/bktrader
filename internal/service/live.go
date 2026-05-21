@@ -5342,6 +5342,9 @@ func mergeLivePositionRiskState(positionSnapshot map[string]any, livePositionSta
 		"hwm",
 		"lwm",
 		"watermarkPositionKey",
+		"pretouchT3ExitProfile",
+		"pretouchT3ExitProfileSelected",
+		"exitProfile",
 	} {
 		if value, ok := livePositionState[key]; ok {
 			mergedPosition[key] = value
@@ -5435,6 +5438,14 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"pretouchShadowOverlaySpeedThreshold",
 		"pretouchShadowOverlayMaxPreTouchSec",
 		"pretouchShadowOverlayMaxEff300s",
+		pretouchShadowT3StopGateEnabledParam,
+		pretouchShadowT3StopGateMinAbsSpeed300sATRParam,
+		pretouchShadowT3StopGateMinEff300sParam,
+		pretouchShadowT3StopGateMinPreTouchSecondsParam,
+		pretouchShadowT3StopGateMaxPreTouchSecondsParam,
+		pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam,
+		pretouchShadowT3StopGateHardStopATRParam,
+		pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam,
 		pretouchShadowSubmitRiskOnQuantityParam,
 		pretouchShadowSubmitOverlayOrderParam,
 		"pretouchShadowStrict10CalendarPct",
@@ -5701,7 +5712,7 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 		quantity = firstPositive(math.Abs(parseFloatValue(currentPosition["quantity"])), quantity)
 	}
 
-	return &SignalIntent{
+	intent := &SignalIntent{
 		Action:         role,
 		Role:           role,
 		Reason:         reason,
@@ -5732,6 +5743,34 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 			"bookImbalance":                 parseFloatValue(meta["bookImbalance"]),
 		},
 	}
+	for _, key := range []string{
+		"pretouchEventShape",
+		"pretouchShadowOverlaySizing",
+		"pretouchT3StopGate",
+		"pretouchT3ExitProfile",
+	} {
+		if value, ok := meta[key]; ok {
+			intent.Metadata[key] = value
+		}
+	}
+	if event, ok := meta["pretouchEvent"].(domain.PretouchEvent); ok {
+		intent.Metadata["pretouchEvent"] = map[string]any{
+			"eventId":           event.EventID,
+			"symbol":            event.Symbol,
+			"side":              event.Side,
+			"touchTime":         formatOptionalRFC3339(event.TouchTime),
+			"touchPrice":        event.TouchPrice,
+			"level":             event.Level,
+			"atr":               event.ATR,
+			"touchExtensionAtr": event.TouchExtensionATR,
+			"speed300sAtr":      event.Speed300sATR,
+			"eff300s":           event.Eff300s,
+			"preTouchSeconds":   event.PreTouchSeconds,
+			"roundtripCostAtr":  event.RoundtripCostATR,
+			"signalBarStart":    formatOptionalRFC3339(event.SignalBarStart),
+		}
+	}
+	return intent
 }
 
 func normalizeLiveExitIntentSide(plannedSide string, currentPosition map[string]any) string {
@@ -6031,6 +6070,13 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		"pretouchShadowOverlaySpeedThreshold",
 		"pretouchShadowOverlayMaxPreTouchSec",
 		"pretouchShadowOverlayMaxEff300s",
+		pretouchShadowT3StopGateMinAbsSpeed300sATRParam,
+		pretouchShadowT3StopGateMinEff300sParam,
+		pretouchShadowT3StopGateMinPreTouchSecondsParam,
+		pretouchShadowT3StopGateMaxPreTouchSecondsParam,
+		pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam,
+		pretouchShadowT3StopGateHardStopATRParam,
+		pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam,
 		"pretouchShadowStrict10CalendarPct",
 		"pretouchShadowStrict15CalendarPct",
 		"pretouchShadowSevere15CalendarPct",
@@ -6073,6 +6119,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 	}
 	if _, ok := overrides[pretouchShadowSubmitOverlayOrderParam]; ok {
 		normalized[pretouchShadowSubmitOverlayOrderParam] = boolValue(overrides[pretouchShadowSubmitOverlayOrderParam])
+	}
+	if _, ok := overrides[pretouchShadowT3StopGateEnabledParam]; ok {
+		normalized[pretouchShadowT3StopGateEnabledParam] = boolValue(overrides[pretouchShadowT3StopGateEnabledParam])
 	}
 	if _, ok := overrides[pretouchShadowOverlayQualitySizingParam]; ok {
 		normalized[pretouchShadowOverlayQualitySizingParam] = boolValue(overrides[pretouchShadowOverlayQualitySizingParam])

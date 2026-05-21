@@ -4574,6 +4574,35 @@ func TestNormalizeLiveSessionOverridesIncludesPretouchExitContract(t *testing.T)
 	}
 }
 
+func TestNormalizeLiveSessionOverridesIncludesPretouchT3StopGateContract(t *testing.T) {
+	overrides := normalizeLiveSessionOverrides(map[string]any{
+		pretouchShadowT3StopGateEnabledParam:                   true,
+		pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        0.65,
+		pretouchShadowT3StopGateMinEff300sParam:                0.85,
+		pretouchShadowT3StopGateMinPreTouchSecondsParam:        250.0,
+		pretouchShadowT3StopGateMaxPreTouchSecondsParam:        900.0,
+		pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam:   0.40,
+		pretouchShadowT3StopGateHardStopATRParam:               3.0,
+		pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam: 4740.0,
+	})
+	if !boolValue(overrides[pretouchShadowT3StopGateEnabledParam]) {
+		t.Fatalf("expected %s=true, got %#v", pretouchShadowT3StopGateEnabledParam, overrides)
+	}
+	for key, want := range map[string]float64{
+		pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        0.65,
+		pretouchShadowT3StopGateMinEff300sParam:                0.85,
+		pretouchShadowT3StopGateMinPreTouchSecondsParam:        250.0,
+		pretouchShadowT3StopGateMaxPreTouchSecondsParam:        900.0,
+		pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam:   0.40,
+		pretouchShadowT3StopGateHardStopATRParam:               3.0,
+		pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam: 4740.0,
+	} {
+		if got := parseFloatValue(overrides[key]); got != want {
+			t.Fatalf("expected %s=%v, got %v in %#v", key, want, got, overrides)
+		}
+	}
+}
+
 func TestNormalizeBacktestParametersDropsInvalidPretouchExitContract(t *testing.T) {
 	normalized, err := NormalizeBacktestParameters(map[string]any{
 		"trail_start_r":    -1.5,

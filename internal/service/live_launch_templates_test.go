@@ -223,6 +223,22 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowMaxSubmittedQuantityParam]); got != defaultPretouchShadowMaxSubmittedQuantity {
 				t.Fatalf("expected %s=%v, got %v", pretouchShadowMaxSubmittedQuantityParam, defaultPretouchShadowMaxSubmittedQuantity, got)
 			}
+			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowT3StopGateEnabledParam]) {
+				t.Fatalf("expected %s=true for deterministic T3 lifecycle selector", pretouchShadowT3StopGateEnabledParam)
+			}
+			for key, want := range map[string]float64{
+				pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        defaultPretouchShadowT3StopGateMinAbsSpeed300sATR,
+				pretouchShadowT3StopGateMinEff300sParam:                defaultPretouchShadowT3StopGateMinEff300s,
+				pretouchShadowT3StopGateMinPreTouchSecondsParam:        defaultPretouchShadowT3StopGateMinPreTouchSeconds,
+				pretouchShadowT3StopGateMaxPreTouchSecondsParam:        defaultPretouchShadowT3StopGateMaxPreTouchSeconds,
+				pretouchShadowT3StopGateMaxAbsTouchExtensionATRParam:   defaultPretouchShadowT3StopGateMaxAbsTouchExtensionATR,
+				pretouchShadowT3StopGateHardStopATRParam:               defaultPretouchShadowT3StopGateHardStopATR,
+				pretouchShadowT3StopGateMinHoldSecondsBeforeTrailParam: defaultPretouchShadowT3StopGateTrailingDelaySeconds,
+			} {
+				if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[key]); got != want {
+					t.Fatalf("expected %s=%v, got %v", key, want, got)
+				}
+			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowOverlaySpeedThreshold"]); got != defaultPretouchShadowOverlaySpeedMin {
 				t.Fatalf("expected pretouchShadowOverlaySpeedThreshold=%v, got %v", defaultPretouchShadowOverlaySpeedMin, got)
 			}
