@@ -174,9 +174,10 @@ func (d *PretouchEventDetector) OnNewHourlyBarOpen(openTime time.Time, openPrice
 
 // PretouchDetectionResult is the output of tick processing.
 type PretouchDetectionResult struct {
-	Detected bool
-	Event    domain.PretouchEvent
-	Reason   string // reason if not detected (for debugging)
+	Detected    bool
+	Event       domain.PretouchEvent
+	Reason      string         // reason if not detected (for debugging)
+	Diagnostics map[string]any // structured context for rejected near-touch events
 }
 
 // OnTick processes a new tick and checks for pretouch event detection.
@@ -404,28 +405,61 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 	touchTime := tick.Time
 	touchPrice := tick.Price
 	signalBarStart := d.currentBar.OpenTime
+	diagnostics := map[string]any{
+		"shape":                  "t3_swing",
+		"side":                   side,
+		"level":                  level,
+		"touchPrice":             touchPrice,
+		"atr":                    atr,
+		"signalBarStart":         formatOptionalRFC3339(signalBarStart),
+		"tickTime":               formatOptionalRFC3339(touchTime),
+		"current":                pretouchBarSnapshot(d.currentBar),
+		"prevBar1":               pretouchBarSnapshot(&prevBar1),
+		"prevBar2":               pretouchBarSnapshot(&prevBar2),
+		"prevBar3":               pretouchBarSnapshot(&prevBar3),
+		"longStructureReady":     longReady,
+		"shortStructureReady":    shortReady,
+		"maxPreTouchSeconds":     d.config.MaxPreTouchSeconds,
+		"minAbsSpeed300sATR":     d.config.MinSpeed300sATR,
+		"maxEff300s":             d.config.MaxEff300s,
+		"roundtripCostThreshold": d.config.CostQ50Threshold,
+	}
 	preTouchSeconds := touchTime.Sub(signalBarStart).Seconds()
+	diagnostics["preTouchSeconds"] = preTouchSeconds
 	if preTouchSeconds > d.config.MaxPreTouchSeconds {
-		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_pre_touch_seconds=%.0f > %.0f", preTouchSeconds, d.config.MaxPreTouchSeconds)}
+		return PretouchDetectionResult{
+			Reason:      fmt.Sprintf("t3_pre_touch_seconds=%.0f > %.0f", preTouchSeconds, d.config.MaxPreTouchSeconds),
+			Diagnostics: diagnostics,
+		}
 	}
 
 	touchExtATR := (touchPrice - level) / atr
 	if side == "short" {
 		touchExtATR = (level - touchPrice) / atr
 	}
+	diagnostics["touchExtensionATR"] = touchExtATR
 	speed300s := d.computeSpeed300s(atr)
+	diagnostics["speed300sATR"] = speed300s
 	if math.Abs(speed300s) < d.config.MinSpeed300sATR {
-		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_speed_300s=%.4f < %.4f", math.Abs(speed300s), d.config.MinSpeed300sATR)}
+		return PretouchDetectionResult{
+			Reason:      fmt.Sprintf("t3_speed_300s=%.4f < %.4f", math.Abs(speed300s), d.config.MinSpeed300sATR),
+			Diagnostics: diagnostics,
+		}
 	}
 	eff300s := d.computeEff300s()
+	diagnostics["eff300s"] = eff300s
 	if eff300s > d.config.MaxEff300s {
-		return PretouchDetectionResult{Reason: fmt.Sprintf("t3_eff_300s=%.4f > %.4f", eff300s, d.config.MaxEff300s)}
+		return PretouchDetectionResult{
+			Reason:      fmt.Sprintf("t3_eff_300s=%.4f > %.4f", eff300s, d.config.MaxEff300s),
+			Diagnostics: diagnostics,
+		}
 	}
 
 	roundtripCostATR := 0.10
 	if tick.BestAsk > 0 && tick.BestBid > 0 && tick.BestAsk >= tick.BestBid {
 		roundtripCostATR = (tick.BestAsk - tick.BestBid) / atr
 	}
+	diagnostics["roundtripCostATR"] = roundtripCostATR
 	costPenalty := 1.0
 	if roundtripCostATR >= d.config.CostQ50Threshold {
 		costPenalty = d.config.CostQ50Penalty

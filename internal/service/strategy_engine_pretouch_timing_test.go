@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"log/slog"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -547,6 +550,56 @@ func TestPretouchTimingEngineAttachesT3StopGateProfileToOverlayIntent(t *testing
 	intentGate := mapValue(intent.Metadata["pretouchT3StopGate"])
 	if !boolValue(intentGate["pass"]) {
 		t.Fatalf("expected stop gate pass in intent metadata, got %#v", intentGate)
+	}
+}
+
+func TestPretouchTimingEngineLogsT3OverlayDetectorMissOncePerSignalBar(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	defer slog.SetDefault(previousLogger)
+
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayMaxPreTouchSec"] = 30.0
+	if _, err := engine.EvaluateSignal(ctx); err != nil {
+		t.Fatalf("initial evaluate failed: %v", err)
+	}
+
+	logs.Reset()
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayMaxPreTouchSec"] = 30.0
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "no_level_touch" {
+		t.Fatalf("expected lead wait/no_level_touch to remain unchanged, got %#v", decision)
+	}
+	output := logs.String()
+	if !strings.Contains(output, "pretouch T3 overlay rejected") {
+		t.Fatalf("expected T3 overlay rejection log, got %q", output)
+	}
+	if !strings.Contains(output, "t3_miss_category=t3_pre_touch_seconds") {
+		t.Fatalf("expected normalized T3 miss category in log, got %q", output)
+	}
+	if !strings.Contains(output, "preTouchSeconds:60") || !strings.Contains(output, "maxPreTouchSeconds:30") {
+		t.Fatalf("expected timing diagnostics in log, got %q", output)
+	}
+
+	logs.Reset()
+	ctx = testPretouchT3OverlaySignalContext(start.Add(61*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters["pretouchShadowOverlayMaxPreTouchSec"] = 30.0
+	if _, err := engine.EvaluateSignal(ctx); err != nil {
+		t.Fatalf("repeat evaluate failed: %v", err)
+	}
+	if strings.Contains(logs.String(), "pretouch T3 overlay rejected") {
+		t.Fatalf("expected repeated same-bar rejection to be throttled, got %q", logs.String())
 	}
 }
 
