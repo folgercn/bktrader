@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -79,6 +80,9 @@ type bkLiveEthPretouchTimingEngine struct {
 	modelPath   string
 	t3ModelPath string
 	config      PretouchDetectorConfig
+
+	t3MissLogMu  sync.Mutex
+	t3MissLogKey string
 }
 
 func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimingEngine {
@@ -436,6 +440,7 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	}
 	result := e.t3Detector.OnTickT3Overlay(tick)
 	if !result.Detected {
+		e.logT3ShadowOverlayMiss(ctx, tick, leadMissReason, result)
 		return StrategySignalDecision{}, false
 	}
 
@@ -553,6 +558,72 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 		Reason:   fmt.Sprintf("pretouch_t3_overlay_%s", result.Event.Side),
 		Metadata: metadata,
 	}, true
+}
+
+func (e *bkLiveEthPretouchTimingEngine) logT3ShadowOverlayMiss(ctx StrategySignalEvaluationContext, tick TickData, leadMissReason string, result PretouchDetectionResult) {
+	if e == nil || e.platform == nil || !pretouchT3OverlayMissLoggable(result.Reason) {
+		return
+	}
+	diagnostics := cloneMetadata(result.Diagnostics)
+	category := pretouchT3OverlayMissReasonCategory(result.Reason)
+	signalBarStart := firstNonEmpty(stringValue(diagnostics["signalBarStart"]), formatOptionalRFC3339(ctx.EventTime.Truncate(time.Hour)))
+	key := strings.Join([]string{
+		NormalizeSymbol(ctx.ExecutionContext.Symbol),
+		signalBarStart,
+		category,
+		stringValue(diagnostics["side"]),
+	}, "|")
+	if !e.shouldLogT3ShadowOverlayMiss(key) {
+		return
+	}
+	e.platform.logger("service.pretouch_timing",
+		"symbol", ctx.ExecutionContext.Symbol,
+		"strategy_version_id", ctx.ExecutionContext.StrategyVersionID,
+		"signal_timeframe", ctx.ExecutionContext.SignalTimeframe,
+	).Info("pretouch T3 overlay rejected",
+		"lead_miss_reason", leadMissReason,
+		"t3_miss_reason", result.Reason,
+		"t3_miss_category", category,
+		"event_time", formatOptionalRFC3339(ctx.EventTime),
+		"tick_price", tick.Price,
+		"diagnostics", diagnostics,
+	)
+}
+
+func (e *bkLiveEthPretouchTimingEngine) shouldLogT3ShadowOverlayMiss(key string) bool {
+	if e == nil {
+		return false
+	}
+	e.t3MissLogMu.Lock()
+	defer e.t3MissLogMu.Unlock()
+	if key != "" && e.t3MissLogKey == key {
+		return false
+	}
+	e.t3MissLogKey = key
+	return true
+}
+
+func pretouchT3OverlayMissLoggable(reason string) bool {
+	switch pretouchT3OverlayMissReasonCategory(reason) {
+	case "t3_pre_touch_seconds", "t3_speed_300s", "t3_eff_300s":
+		return true
+	default:
+		return false
+	}
+}
+
+func pretouchT3OverlayMissReasonCategory(reason string) string {
+	reason = strings.TrimSpace(reason)
+	switch {
+	case strings.HasPrefix(reason, "t3_pre_touch_seconds="):
+		return "t3_pre_touch_seconds"
+	case strings.HasPrefix(reason, "t3_speed_300s="):
+		return "t3_speed_300s"
+	case strings.HasPrefix(reason, "t3_eff_300s="):
+		return "t3_eff_300s"
+	default:
+		return reason
+	}
 }
 
 type pretouchShadowSubmitContext struct {
