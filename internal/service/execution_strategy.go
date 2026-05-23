@@ -115,6 +115,8 @@ type executionProfile struct {
 	SLMaxSlippageBps      float64
 }
 
+const slWideSpreadModeSpreadCappedLimit = "spread-capped-limit"
+
 type slProtectionDecision struct {
 	Price            float64
 	TopDepthQty      float64
@@ -267,6 +269,25 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 		proposal.LimitPrice = 0
 		proposal.TimeInForce = ""
 		proposal.PostOnly = false
+		if useTimeoutFallback && wideSpreadMode == slWideSpreadModeSpreadCappedLimit {
+			proposal.Type = timeoutFallbackType
+			proposal.TimeInForce = ""
+			proposal.PostOnly = false
+			proposal.LimitPrice = 0
+			proposal.Reason = firstNonEmpty(intent.Reason, "execution-timeout-fallback")
+			proposal.Metadata["fallbackFromTimeout"] = true
+			proposal.Metadata["fallbackOrderType"] = timeoutFallbackType
+			proposal.Metadata["executionDecision"] = "timeout-fallback"
+			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
+				mapValue(proposal.Metadata["executionDecisionContext"]),
+				map[string]any{
+					"slProtectionBranch": true,
+					"slProtectionMode":   "timeout-fallback",
+					"slMaxSlippageBps":   slMaxSlippageBps,
+				},
+			)
+			return proposal, nil
+		}
 		if spreadBps > 0 && slMaxSlippageBps > 0 && spreadBps > slMaxSlippageBps {
 			slProtection := resolveAggressiveSLProtectionDecision(intent.Side, proposal.Quantity, bestBid, bestAsk, bestBidQty, bestAskQty, priceHint, slMaxSlippageBps)
 			proposal.Metadata["slProtectionObserved"] = true
@@ -277,6 +298,39 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			proposal.Metadata["expectedFillCoverage"] = slProtection.ExpectedCoverage
 			proposal.Metadata["quoteGapBps"] = slProtection.QuoteGapBps
 			proposal.Metadata["slProtectionDepthMode"] = slProtection.DepthMode
+			if wideSpreadMode == slWideSpreadModeSpreadCappedLimit && slProtection.Price > 0 {
+				restingTimeout := profile.RestingTimeoutSeconds
+				if restingTimeout <= 0 {
+					restingTimeout = 1
+				}
+				proposal.Type = "LIMIT"
+				proposal.LimitPrice = slProtection.Price
+				proposal.PriceHint = slProtection.Price
+				proposal.PriceSource = "sl_protection.spread_capped"
+				proposal.TimeInForce = strings.ToUpper(strings.TrimSpace(firstNonEmpty(profile.TimeInForce, "GTC")))
+				proposal.PostOnly = false
+				proposal.Metadata["executionMode"] = "sl-spread-capped-limit"
+				proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(restingTimeout) * time.Second).Format(time.RFC3339)
+				proposal.Metadata["executionRestingTimeoutSeconds"] = restingTimeout
+				proposal.Metadata["executionDecision"] = "sl-slippage-protected"
+				proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
+					mapValue(proposal.Metadata["executionDecisionContext"]),
+					map[string]any{
+						"slProtectionBranch":    true,
+						"slProtectionMode":      slWideSpreadModeSpreadCappedLimit,
+						"slProtectionObserved":  true,
+						"slMaxSlippageBps":      slMaxSlippageBps,
+						"slProtectionDepthMode": slProtection.DepthMode,
+						"topDepthQty":           slProtection.TopDepthQty,
+						"topDepthNotional":      slProtection.TopDepthNotional,
+						"expectedFillCoverage":  slProtection.ExpectedCoverage,
+						"quoteGapBps":           slProtection.QuoteGapBps,
+						"fallbackOrderType":     timeoutFallbackType,
+						"restingTimeoutSeconds": restingTimeout,
+					},
+				)
+				return proposal, nil
+			}
 			proposal.Metadata["executionDecision"] = "direct-dispatch"
 			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
 				mapValue(proposal.Metadata["executionDecisionContext"]),
@@ -637,7 +691,7 @@ func resolveExecutionProfile(parameters map[string]any, intent SignalIntent) exe
 		profile.OrderType = strings.ToUpper(strings.TrimSpace(firstNonEmpty(stringValue(parameters["executionSLExitOrderType"]), "MARKET")))
 		profile.TimeInForce = strings.ToUpper(strings.TrimSpace(stringValue(parameters["executionSLExitTimeInForce"])))
 		profile.PostOnly = boolValue(parameters["executionSLExitPostOnly"])
-		profile.WideSpreadMode = ""
+		profile.WideSpreadMode = strings.ToLower(strings.TrimSpace(stringValue(parameters["executionSLExitWideSpreadMode"])))
 		if profile.TimeoutFallbackType == "" {
 			profile.TimeoutFallbackType = "MARKET"
 		}
