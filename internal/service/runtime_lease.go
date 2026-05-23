@@ -31,6 +31,11 @@ func (p *Platform) acquireRuntimeLease(ctx context.Context, resourceType, resour
 
 func (p *Platform) acquireRuntimeLeaseWithTiming(ctx context.Context, resourceType, resourceID string, ttl, heartbeatInterval time.Duration) (context.Context, func(), bool, error) {
 	ownerID := p.runtimeLeaseOwnerID
+	logger := p.logger("service.runtime_lease",
+		"resource_type", resourceType,
+		"resource_id", resourceID,
+		"owner_id", ownerID,
+	)
 	lease, ok, err := p.store.AcquireRuntimeLease(domain.RuntimeLeaseAcquireRequest{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
@@ -38,15 +43,17 @@ func (p *Platform) acquireRuntimeLeaseWithTiming(ctx context.Context, resourceTy
 		TTL:          ttl,
 	})
 	if err != nil || !ok {
+		if err == nil {
+			logger.Debug("runtime lease held by another owner",
+				"holder_owner_id", lease.OwnerID,
+				"holder_expires_at", lease.ExpiresAt,
+				"holder_updated_at", lease.UpdatedAt,
+			)
+		}
 		return ctx, func() {}, ok, err
 	}
 
 	leaseCtx, cancel := context.WithCancel(ctx)
-	logger := p.logger("service.runtime_lease",
-		"resource_type", resourceType,
-		"resource_id", resourceID,
-		"owner_id", ownerID,
-	)
 	logger.Debug("runtime lease acquired", "expires_at", lease.ExpiresAt)
 
 	var once sync.Once

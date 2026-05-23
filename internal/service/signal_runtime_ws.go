@@ -124,6 +124,8 @@ type signalRuntimeWSProfile struct {
 	pingWriteTimeout time.Duration
 }
 
+var signalRuntimePersistedStopCheckInterval = 5 * time.Second
+
 type signalRuntimeLoopRunner func(context.Context, string) (bool, error)
 type signalRuntimeBackoffWaiter func(context.Context, time.Duration) bool
 
@@ -627,8 +629,10 @@ func (p *Platform) runExchangeWebsocketLoop(
 	})
 	connected := true
 
-	ticker := time.NewTicker(wsProfile.pingInterval)
-	defer ticker.Stop()
+	pingTicker := time.NewTicker(wsProfile.pingInterval)
+	defer pingTicker.Stop()
+	stopCheckTicker := time.NewTicker(signalRuntimePersistedStopCheckInterval)
+	defer stopCheckTicker.Stop()
 
 	done := make(chan error, 1)
 	go func() {
@@ -697,7 +701,20 @@ func (p *Platform) runExchangeWebsocketLoop(
 				"error", err,
 			)
 			return connected, err
-		case <-ticker.C:
+		case <-stopCheckTicker.C:
+			stopRequested, stopCheckErr := p.persistedSignalRuntimeStopRequested(session.ID)
+			if stopCheckErr != nil {
+				logger.Warn("signal runtime persisted stop check failed", "error", stopCheckErr)
+			} else if stopRequested {
+				passiveTimeout := p.runtimePolicy.WSPassiveCloseTimeoutSeconds
+				if passiveTimeout <= 0 {
+					passiveTimeout = 2
+				}
+				logger.Info("signal runtime persisted stop observed; closing websocket")
+				_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(time.Duration(passiveTimeout)*time.Second))
+				return connected, nil
+			}
+		case <-pingTicker.C:
 			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(wsProfile.pingWriteTimeout)); err != nil {
 				logger.Warn("signal runtime websocket ping failed",
 					"connected", connected,
@@ -714,6 +731,24 @@ func (p *Platform) runExchangeWebsocketLoop(
 			})
 		}
 	}
+}
+
+func (p *Platform) persistedSignalRuntimeStopRequested(sessionID string) (bool, error) {
+	session, err := p.store.GetSignalRuntimeSession(sessionID)
+	if err != nil {
+		if isSignalRuntimeSessionNotFoundError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if strings.EqualFold(session.Status, "STOPPED") || strings.EqualFold(session.Status, "ERROR") {
+		return true, nil
+	}
+	desired := strings.TrimSpace(stringValue(session.State["desiredStatus"]))
+	if desired != "" && !strings.EqualFold(desired, "RUNNING") {
+		return true, nil
+	}
+	return false, nil
 }
 
 // validateSignalBarContinuityAfterReconnect checks if a signal bar close was missed

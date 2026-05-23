@@ -310,6 +310,155 @@ func TestRunExchangeWebsocketLoopRecordsReconnectObservability(t *testing.T) {
 	}
 }
 
+func TestRunExchangeWebsocketLoopStopsWhenPersistedSessionStopped(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	platform.SetRuntimePolicy(RuntimePolicy{
+		WSReadStaleTimeoutSeconds:    5,
+		WSPingIntervalSeconds:        1,
+		WSPassiveCloseTimeoutSeconds: 1,
+	})
+	if got := platform.signalRuntimeWSProfileForAttempt(0).pingInterval; got != time.Second {
+		t.Fatalf("test setup expected 1s ping interval, got %s", got)
+	}
+	originalStopCheckInterval := signalRuntimePersistedStopCheckInterval
+	signalRuntimePersistedStopCheckInterval = 50 * time.Millisecond
+	t.Cleanup(func() {
+		signalRuntimePersistedStopCheckInterval = originalStopCheckInterval
+	})
+	now := time.Now().UTC()
+	session := domain.SignalRuntimeSession{
+		ID:             "runtime-external-stop",
+		Status:         "RUNNING",
+		RuntimeAdapter: "binance-market-ws",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+			"actualStatus":  "RUNNING",
+			"subscriptions": []map[string]any{{
+				"sourceKey":  "binance-trade-tick",
+				"role":       "trigger",
+				"symbol":     "BTCUSDT",
+				"channel":    "btcusdt@trade",
+				"adapterKey": "binance-market-ws",
+			}},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	persisted, err := platform.store.CreateSignalRuntimeSession(session)
+	if err != nil {
+		t.Fatalf("persist runtime session failed: %v", err)
+	}
+	platform.cacheSignalRuntimeSession(persisted)
+
+	subscribed := make(chan struct{})
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade failed: %v", err)
+			return
+		}
+		defer conn.Close()
+		if _, _, err := conn.ReadMessage(); err != nil {
+			t.Errorf("read subscribe payload failed: %v", err)
+			return
+		}
+		close(subscribed)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	type loopResult struct {
+		connected bool
+		err       error
+	}
+	resultCh := make(chan loopResult, 1)
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	go func() {
+		connected, err := platform.runExchangeWebsocketLoop(context.Background(), persisted, wsURL, func([]map[string]any) (map[string]any, error) {
+			return map[string]any{
+				"method": "SUBSCRIBE",
+				"params": []string{"btcusdt@trade"},
+				"id":     1,
+			}, nil
+		})
+		resultCh <- loopResult{connected: connected, err: err}
+	}()
+
+	select {
+	case <-subscribed:
+	case <-time.After(time.Second):
+		t.Fatal("expected runtime websocket to subscribe")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		current, err := platform.store.GetSignalRuntimeSession(persisted.ID)
+		if err != nil {
+			t.Fatalf("get connected runtime session failed: %v", err)
+		}
+		if stringValue(current.State["connectedAt"]) != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected websocket connected state before external stop, got %#v", current.State)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	stopped := persisted
+	stopped.Status = "STOPPED"
+	stopped.State = cloneMetadata(stopped.State)
+	stopped.State["desiredStatus"] = "STOPPED"
+	stopped.State["actualStatus"] = "STOPPED"
+	if _, err := platform.store.UpdateSignalRuntimeSession(stopped); err != nil {
+		t.Fatalf("persist external stop failed: %v", err)
+	}
+
+	select {
+	case result := <-resultCh:
+		if !result.connected {
+			t.Fatal("expected websocket loop to report connected before external stop")
+		}
+		if result.err != nil {
+			t.Fatalf("expected persisted stop to end loop cleanly, got %v", result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected persisted external stop to close websocket loop")
+	}
+}
+
+func TestPersistedSignalRuntimeStopRequestedTreatsDeletedSessionAsStop(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.store.CreateSignalRuntimeSession(domain.SignalRuntimeSession{
+		ID:             "runtime-deleted",
+		Status:         "RUNNING",
+		RuntimeAdapter: "binance-market-ws",
+		State: map[string]any{
+			"desiredStatus": "RUNNING",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create runtime session failed: %v", err)
+	}
+	if err := platform.store.DeleteSignalRuntimeSession(session.ID); err != nil {
+		t.Fatalf("delete runtime session failed: %v", err)
+	}
+
+	stopRequested, err := platform.persistedSignalRuntimeStopRequested(session.ID)
+	if err != nil {
+		t.Fatalf("persisted stop check failed: %v", err)
+	}
+	if !stopRequested {
+		t.Fatal("expected deleted persisted session to request runner stop")
+	}
+}
+
 func TestFilterStatesBySymbolKeepsBlankEntriesForBackwardCompatibility(t *testing.T) {
 	sourceStates := map[string]any{
 		"btc":    map[string]any{"symbol": "BTCUSDT"},
