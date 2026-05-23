@@ -5748,9 +5748,14 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 		"pretouchShadowOverlaySizing",
 		"pretouchT3StopGate",
 		"pretouchT3ExitProfile",
+		"livePositionState",
 	} {
 		if value, ok := meta[key]; ok {
-			intent.Metadata[key] = value
+			if metadata := mapValue(value); len(metadata) > 0 {
+				intent.Metadata[key] = cloneMetadata(metadata)
+			} else {
+				intent.Metadata[key] = value
+			}
 		}
 	}
 	if event, ok := meta["pretouchEvent"].(domain.PretouchEvent); ok {
