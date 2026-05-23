@@ -3126,6 +3126,142 @@ func TestBookAwareExecutionStrategyKeepsMarketSLWithDefaultSlippageTelemetry(t *
 	}
 }
 
+func TestBookAwareExecutionStrategyUsesSpreadCappedLimitForWideSLWhenConfigured(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	eventTime := time.Date(2026, 5, 21, 10, 30, 21, 0, time.UTC)
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionSLExitWideSpreadMode":        slWideSpreadModeSpreadCappedLimit,
+				"executionSLExitRestingTimeoutSeconds": 1,
+				"executionSLMaxSlippageBps":            8.0,
+			},
+		},
+		EventTime: eventTime,
+		Intent: SignalIntent{
+			Action:      "exit",
+			Role:        "exit",
+			Reason:      "SL",
+			Side:        "BUY",
+			Symbol:      "ETHUSDT",
+			PriceHint:   2122.82,
+			PriceSource: "order_book.bestAsk",
+			Quantity:    0.279,
+			SignalKind:  "risk-exit",
+			Metadata: map[string]any{
+				"bestBid":           2118.81,
+				"bestAsk":           2122.82,
+				"bestAskQty":        0.258,
+				"bestBidQty":        126.04,
+				"spreadBps":         18.90782552933763,
+				"signalBarStateKey": "state-1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proposal.Type != "LIMIT" || proposal.TimeInForce != "GTC" || proposal.PostOnly {
+		t.Fatalf("expected non-post-only LIMIT GTC SL proposal, got type=%s tif=%s postOnly=%v", proposal.Type, proposal.TimeInForce, proposal.PostOnly)
+	}
+	if !proposal.ReduceOnly {
+		t.Fatal("expected capped SL proposal to stay reduceOnly")
+	}
+	if got := proposal.LimitPrice; got != 2120.506652 {
+		t.Fatalf("expected spread-capped limit price 2120.506652, got %v", got)
+	}
+	if got := proposal.PriceHint; got != proposal.LimitPrice {
+		t.Fatalf("expected price hint to track capped limit price, got priceHint=%v limit=%v", proposal.PriceHint, proposal.LimitPrice)
+	}
+	if got := proposal.PriceSource; got != "sl_protection.spread_capped" {
+		t.Fatalf("expected capped price source, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "sl-slippage-protected" {
+		t.Fatalf("expected sl-slippage-protected decision, got %s", got)
+	}
+	if got := stringValue(proposal.Metadata["executionExpiresAt"]); got != eventTime.Add(time.Second).Format(time.RFC3339) {
+		t.Fatalf("expected 1s SL capped-limit expiry, got %s", got)
+	}
+	if got := maxIntValue(proposal.Metadata["executionRestingTimeoutSeconds"], 0); got != 1 {
+		t.Fatalf("expected resting timeout metadata 1s, got %d", got)
+	}
+	if got := parseFloatValue(proposal.Metadata["slCappedPrice"]); got != 2120.506652 {
+		t.Fatalf("expected telemetry slCappedPrice 2120.506652, got %v", got)
+	}
+	context := mapValue(proposal.Metadata["executionDecisionContext"])
+	if got := stringValue(context["slProtectionMode"]); got != slWideSpreadModeSpreadCappedLimit {
+		t.Fatalf("expected spread-capped-limit protection mode, got %s", got)
+	}
+	if got := parseFloatValue(context["expectedFillCoverage"]); got != 0.9247311827956989 {
+		t.Fatalf("expected top-book coverage telemetry, got %v", got)
+	}
+	if got := stringValue(context["fallbackOrderType"]); got != "MARKET" {
+		t.Fatalf("expected MARKET fallback metadata, got %s", got)
+	}
+}
+
+func TestBookAwareExecutionStrategyFallsBackToMarketAfterSLTimeout(t *testing.T) {
+	strategy := bookAwareExecutionStrategy{}
+	eventTime := time.Date(2026, 5, 21, 10, 30, 22, 0, time.UTC)
+	intent := SignalIntent{
+		Action:      "exit",
+		Role:        "exit",
+		Reason:      "SL",
+		Side:        "BUY",
+		Symbol:      "ETHUSDT",
+		PriceHint:   2122.82,
+		PriceSource: "order_book.bestAsk",
+		Quantity:    0.279,
+		SignalKind:  "risk-exit",
+		Metadata: map[string]any{
+			"bestBid":           2118.81,
+			"bestAsk":           2122.82,
+			"bestAskQty":        0.258,
+			"bestBidQty":        126.04,
+			"spreadBps":         18.90782552933763,
+			"signalBarStateKey": "state-1",
+		},
+	}
+	proposal, err := strategy.BuildProposal(ExecutionPlanningContext{
+		Session: domain.LiveSession{State: map[string]any{
+			"lastExecutionTimeoutIntentSignature": buildExecutionSignalSignature(intent),
+		}},
+		Execution: StrategyExecutionContext{
+			Parameters: map[string]any{
+				"executionSLExitWideSpreadMode":           slWideSpreadModeSpreadCappedLimit,
+				"executionSLExitRestingTimeoutSeconds":    1,
+				"executionSLExitTimeoutFallbackOrderType": "MARKET",
+				"executionSLMaxSlippageBps":               8.0,
+			},
+		},
+		EventTime: eventTime,
+		Intent:    intent,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proposal.Type != "MARKET" || proposal.LimitPrice != 0 || proposal.TimeInForce != "" || proposal.PostOnly {
+		t.Fatalf("expected MARKET timeout fallback, got type=%s limit=%v tif=%s postOnly=%v", proposal.Type, proposal.LimitPrice, proposal.TimeInForce, proposal.PostOnly)
+	}
+	if !proposal.ReduceOnly {
+		t.Fatal("expected timeout fallback SL to stay reduceOnly")
+	}
+	if !boolValue(proposal.Metadata["fallbackFromTimeout"]) {
+		t.Fatal("expected fallbackFromTimeout metadata")
+	}
+	if got := stringValue(proposal.Metadata["executionDecision"]); got != "timeout-fallback" {
+		t.Fatalf("expected timeout-fallback decision, got %s", got)
+	}
+	context := mapValue(proposal.Metadata["executionDecisionContext"])
+	if got := stringValue(context["slProtectionMode"]); got != "timeout-fallback" {
+		t.Fatalf("expected timeout-fallback SL protection mode, got %s", got)
+	}
+	if !boolValue(context["slProtectionBranch"]) {
+		t.Fatalf("expected truthy SL branch marker, got %#v", context["slProtectionBranch"])
+	}
+}
+
 func TestResolveAggressiveSLProtectionDecisionUsesCappedPriceWhenTopBookOutsideCap(t *testing.T) {
 	decision := resolveAggressiveSLProtectionDecision("SELL", 0.5, 68000, 68150, 1.2, 0, 68000, 20)
 	if got := decision.Price; got != 68013.85 {
