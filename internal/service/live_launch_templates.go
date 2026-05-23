@@ -376,8 +376,6 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"executionEntryMaxSourceDivergenceBps":    8,
 		"executionSLExitOrderType":                "MARKET",
 		"executionSLExitMaxSpreadBps":             8,
-		"executionSLExitWideSpreadMode":           slWideSpreadModeSpreadCappedLimit,
-		"executionSLExitRestingTimeoutSeconds":    1,
 		"executionSLMaxSlippageBps":               8,
 		"executionSLExitTimeoutFallbackOrderType": "MARKET",
 		"dispatchCooldownSeconds":                 30,

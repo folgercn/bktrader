@@ -317,8 +317,6 @@ func NewStore() *Store {
 			"executionEntryMaxSourceDivergenceBps":         8,
 			"executionSLExitOrderType":                     "MARKET",
 			"executionSLExitMaxSpreadBps":                  8,
-			"executionSLExitWideSpreadMode":                "spread-capped-limit",
-			"executionSLExitRestingTimeoutSeconds":         1,
 			"executionSLMaxSlippageBps":                    8,
 			"executionSLExitTimeoutFallbackOrderType":      "MARKET",
 			"dispatchCooldownSeconds":                      30,

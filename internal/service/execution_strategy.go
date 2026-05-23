@@ -298,53 +298,28 @@ func (bookAwareExecutionStrategy) BuildProposal(ctx ExecutionPlanningContext) (E
 			proposal.Metadata["expectedFillCoverage"] = slProtection.ExpectedCoverage
 			proposal.Metadata["quoteGapBps"] = slProtection.QuoteGapBps
 			proposal.Metadata["slProtectionDepthMode"] = slProtection.DepthMode
-			if wideSpreadMode == slWideSpreadModeSpreadCappedLimit && slProtection.Price > 0 {
-				restingTimeout := profile.RestingTimeoutSeconds
-				if restingTimeout <= 0 {
-					restingTimeout = 1
-				}
-				proposal.Type = "LIMIT"
-				proposal.LimitPrice = slProtection.Price
-				proposal.PriceHint = slProtection.Price
-				proposal.PriceSource = "sl_protection.spread_capped"
-				proposal.TimeInForce = strings.ToUpper(strings.TrimSpace(firstNonEmpty(profile.TimeInForce, "GTC")))
-				proposal.PostOnly = false
-				proposal.Metadata["executionMode"] = "sl-spread-capped-limit"
-				proposal.Metadata["executionExpiresAt"] = ctx.EventTime.UTC().Add(time.Duration(restingTimeout) * time.Second).Format(time.RFC3339)
-				proposal.Metadata["executionRestingTimeoutSeconds"] = restingTimeout
-				proposal.Metadata["executionDecision"] = "sl-slippage-protected"
-				proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
-					mapValue(proposal.Metadata["executionDecisionContext"]),
-					map[string]any{
-						"slProtectionBranch":    true,
-						"slProtectionMode":      slWideSpreadModeSpreadCappedLimit,
-						"slProtectionObserved":  true,
-						"slMaxSlippageBps":      slMaxSlippageBps,
-						"slProtectionDepthMode": slProtection.DepthMode,
-						"topDepthQty":           slProtection.TopDepthQty,
-						"topDepthNotional":      slProtection.TopDepthNotional,
-						"expectedFillCoverage":  slProtection.ExpectedCoverage,
-						"quoteGapBps":           slProtection.QuoteGapBps,
-						"fallbackOrderType":     timeoutFallbackType,
-						"restingTimeoutSeconds": restingTimeout,
-					},
-				)
-				return proposal, nil
+			extraContext := map[string]any{
+				"slProtectionBranch":    true,
+				"slProtectionMode":      "market-dispatch",
+				"slProtectionObserved":  true,
+				"slMaxSlippageBps":      slMaxSlippageBps,
+				"slProtectionDepthMode": slProtection.DepthMode,
+				"topDepthQty":           slProtection.TopDepthQty,
+				"topDepthNotional":      slProtection.TopDepthNotional,
+				"expectedFillCoverage":  slProtection.ExpectedCoverage,
+				"quoteGapBps":           slProtection.QuoteGapBps,
+			}
+			if wideSpreadMode == slWideSpreadModeSpreadCappedLimit {
+				const suppressedReason = "reduce-only-sl-market-required"
+				proposal.Metadata["slProtectionRequestedMode"] = slWideSpreadModeSpreadCappedLimit
+				proposal.Metadata["slProtectionSuppressedReason"] = suppressedReason
+				extraContext["slProtectionRequestedMode"] = slWideSpreadModeSpreadCappedLimit
+				extraContext["slProtectionSuppressedReason"] = suppressedReason
 			}
 			proposal.Metadata["executionDecision"] = "direct-dispatch"
 			proposal.Metadata["executionDecisionContext"] = mergeExecutionDecisionContext(
 				mapValue(proposal.Metadata["executionDecisionContext"]),
-				map[string]any{
-					"slProtectionBranch":    true,
-					"slProtectionMode":      "market-dispatch",
-					"slProtectionObserved":  true,
-					"slMaxSlippageBps":      slMaxSlippageBps,
-					"slProtectionDepthMode": slProtection.DepthMode,
-					"topDepthQty":           slProtection.TopDepthQty,
-					"topDepthNotional":      slProtection.TopDepthNotional,
-					"expectedFillCoverage":  slProtection.ExpectedCoverage,
-					"quoteGapBps":           slProtection.QuoteGapBps,
-				},
+				extraContext,
 			)
 			return proposal, nil
 		}

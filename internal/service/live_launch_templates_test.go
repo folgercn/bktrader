@@ -175,11 +175,11 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchBaseOrderQuantity"]); got != want.quantity {
 				t.Fatalf("expected pretouchBaseOrderQuantity=%v, got %v", want.quantity, got)
 			}
-			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["executionSLExitWideSpreadMode"]); got != slWideSpreadModeSpreadCappedLimit {
-				t.Fatalf("expected pretouch template SL wide-spread mode %s, got %s", slWideSpreadModeSpreadCappedLimit, got)
+			if _, ok := item.LaunchPayload.LiveSessionOverrides["executionSLExitWideSpreadMode"]; ok {
+				t.Fatalf("expected pretouch template not to rest SL exits as capped limits: %#v", item.LaunchPayload.LiveSessionOverrides)
 			}
-			if got := maxIntValue(item.LaunchPayload.LiveSessionOverrides["executionSLExitRestingTimeoutSeconds"], 0); got != 1 {
-				t.Fatalf("expected pretouch template SL capped-limit timeout 1s, got %d", got)
+			if _, ok := item.LaunchPayload.LiveSessionOverrides["executionSLExitRestingTimeoutSeconds"]; ok {
+				t.Fatalf("expected pretouch template not to configure SL resting timeout: %#v", item.LaunchPayload.LiveSessionOverrides)
 			}
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["executionSLExitTimeoutFallbackOrderType"]); got != "MARKET" {
 				t.Fatalf("expected pretouch template SL timeout fallback MARKET, got %s", got)
