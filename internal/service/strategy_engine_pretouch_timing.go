@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,40 +14,43 @@ import (
 )
 
 const (
-	bkLiveEthPretouchTimingEngineKey          = "bk-live-eth-pretouch-timing"
-	bkLiveEthPretouchTimingStrategyID         = "strategy-bk-eth-pretouch-timing"
-	bkLiveEthPretouchTimingStrategyVersionID  = "strategy-version-bk-eth-pretouch-timing-v010"
-	defaultPretouchModelPath                  = "data/pretouch_model.json"
-	defaultPretouchT3OverlayModelPath         = "data/pretouch_t3_overlay_rf_model.json"
-	pretouchShadowModeTestnetCollect          = "testnet_shadow_collect"
-	pretouchShadowSubmitRiskOnQuantityParam   = "pretouchShadowSubmitRiskOnQuantity"
-	pretouchShadowSubmitOverlayOrderParam     = "pretouchShadowSubmitOverlayOrder"
-	pretouchShadowLeadQuantityBandSizingParam = "pretouchShadowLeadQuantityBandSizing"
-	pretouchShadowOverlayQualitySizingParam   = "pretouchShadowOverlayQualitySizing"
-	pretouchShadowOverlayQualityFallbackParam = "pretouchShadowOverlayQualityFallbackSubmit"
-	pretouchShadowT3StopGateEnabledParam      = "pretouchShadowT3StopGateEnabled"
-	defaultPretouchShadowCandidateID          = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_det_stop_gate_20260521"
-	defaultPretouchShadowLeadScale            = 1.5
-	defaultPretouchShadowLeadQuantityMinQty   = 0.20
-	defaultPretouchShadowLeadQuantityMaxQty   = 0.40
-	defaultPretouchShadowOverlayScale         = 2.0
-	defaultPretouchShadowOverlayBaseShare     = 0.40
-	defaultPretouchShadowOverlaySpeedMin      = 0.35
-	defaultPretouchShadowOverlayQualityMin    = 2.50
-	defaultPretouchShadowOverlayQualityMax    = 5.00
-	defaultPretouchShadowOverlayQualityCost   = 0.10
-	defaultPretouchShadowOverlayQualityMinQty = 0.20
-	defaultPretouchShadowOverlayQualityMaxQty = 0.40
-	pretouchShadowMaxSubmittedQuantityParam   = "pretouchShadowMaxSubmittedQuantity"
-	defaultPretouchShadowMaxSubmittedQuantity = 0.40
-	maxPretouchShadowLeadScale                = defaultPretouchShadowLeadScale
-	maxPretouchShadowOverlayScale             = defaultPretouchShadowOverlayScale
-	maxPretouchShadowOverlayBaseShare         = defaultPretouchShadowOverlayBaseShare
-	maxPretouchShadowOverlayQualityMax        = defaultPretouchShadowOverlayQualityMax
-	maxPretouchShadowMaxSubmittedQuantity     = defaultPretouchShadowMaxSubmittedQuantity
-	defaultPretouchShadowStrict10Pct          = 35.521555
-	defaultPretouchShadowStrict15Pct          = 28.970948
-	defaultPretouchShadowSevere15Pct          = 21.231073
+	bkLiveEthPretouchTimingEngineKey           = "bk-live-eth-pretouch-timing"
+	bkLiveEthPretouchTimingStrategyID          = "strategy-bk-eth-pretouch-timing"
+	bkLiveEthPretouchTimingStrategyVersionID   = "strategy-version-bk-eth-pretouch-timing-v010"
+	defaultPretouchModelPath                   = "data/pretouch_model.json"
+	defaultPretouchT3OverlayModelPath          = "data/pretouch_t3_overlay_rf_model.json"
+	pretouchShadowModeTestnetCollect           = "testnet_shadow_collect"
+	pretouchShadowSubmitRiskOnQuantityParam    = "pretouchShadowSubmitRiskOnQuantity"
+	pretouchShadowSubmitOverlayOrderParam      = "pretouchShadowSubmitOverlayOrder"
+	pretouchShadowLeadQuantityBandSizingParam  = "pretouchShadowLeadQuantityBandSizing"
+	pretouchShadowOverlayQualitySizingParam    = "pretouchShadowOverlayQualitySizing"
+	pretouchShadowOverlayQualityFallbackParam  = "pretouchShadowOverlayQualityFallbackSubmit"
+	pretouchShadowT3StopGateEnabledParam       = "pretouchShadowT3StopGateEnabled"
+	pretouchShadowT2StaticDownsizeParam        = "pretouchShadowT2StaticDownsize"
+	pretouchShadowT2StaticDownsizeCandidateID  = "static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize"
+	defaultPretouchShadowCandidateID           = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_det_stop_gate_20260521"
+	defaultPretouchShadowLeadScale             = 1.5
+	defaultPretouchShadowT2StaticDownsizeScale = 0.25
+	defaultPretouchShadowLeadQuantityMinQty    = 0.20
+	defaultPretouchShadowLeadQuantityMaxQty    = 0.40
+	defaultPretouchShadowOverlayScale          = 2.0
+	defaultPretouchShadowOverlayBaseShare      = 0.40
+	defaultPretouchShadowOverlaySpeedMin       = 0.35
+	defaultPretouchShadowOverlayQualityMin     = 2.50
+	defaultPretouchShadowOverlayQualityMax     = 5.00
+	defaultPretouchShadowOverlayQualityCost    = 0.10
+	defaultPretouchShadowOverlayQualityMinQty  = 0.20
+	defaultPretouchShadowOverlayQualityMaxQty  = 0.40
+	pretouchShadowMaxSubmittedQuantityParam    = "pretouchShadowMaxSubmittedQuantity"
+	defaultPretouchShadowMaxSubmittedQuantity  = 0.40
+	maxPretouchShadowLeadScale                 = defaultPretouchShadowLeadScale
+	maxPretouchShadowOverlayScale              = defaultPretouchShadowOverlayScale
+	maxPretouchShadowOverlayBaseShare          = defaultPretouchShadowOverlayBaseShare
+	maxPretouchShadowOverlayQualityMax         = defaultPretouchShadowOverlayQualityMax
+	maxPretouchShadowMaxSubmittedQuantity      = defaultPretouchShadowMaxSubmittedQuantity
+	defaultPretouchShadowStrict10Pct           = 35.521555
+	defaultPretouchShadowStrict15Pct           = 28.970948
+	defaultPretouchShadowSevere15Pct           = 21.231073
 
 	pretouchShadowT3StopGateMinAbsSpeed300sATRParam        = "pretouchShadowT3StopGateMinAbsSpeed300sATR"
 	pretouchShadowT3StopGateMinEff300sParam                = "pretouchShadowT3StopGateMinEff300s"
@@ -332,6 +336,10 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		orderBookStats,
 		pretouchShadowSubmitContextFromEvaluation(ctx),
 	)
+	t2StaticDownsize := pretouchT2StaticDownsizeCandidateFromEvent(ctx.ExecutionContext.Parameters, result.Event, closedBars, rfProb)
+	if shadowSizing != nil && t2StaticDownsize != nil {
+		pretouchApplyT2StaticDownsizeShadow(shadowSizing, t2StaticDownsize)
+	}
 	suggestedQuantity := productionSuggestedQuantity
 	if shadowSizing != nil {
 		if submittedQuantityAfterShadow := parseFloatValue(shadowSizing["submittedQuantityAfterShadow"]); submittedQuantityAfterShadow > 0 {
@@ -378,6 +386,9 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	if shadowSizing != nil {
 		signalBarDecision["pretouchShadowSizing"] = cloneMetadata(shadowSizing)
 	}
+	if t2StaticDownsize != nil {
+		signalBarDecision["t2StaticDownsizeCandidate"] = cloneMetadata(t2StaticDownsize)
+	}
 	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 
 	metadata := map[string]any{
@@ -414,6 +425,9 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	}
 	if shadowSizing != nil {
 		metadata["pretouchShadowSizing"] = shadowSizing
+	}
+	if t2StaticDownsize != nil {
+		metadata["t2StaticDownsizeCandidate"] = t2StaticDownsize
 	}
 
 	// Produce signal decision
@@ -794,6 +808,204 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 		"submittedOverlayOrderEnabled":       false,
 		"submittedRiskOnQuantityEnabled":     riskOnEnabled,
 	}
+}
+
+func pretouchT2StaticDownsizeCandidateFromEvent(parameters map[string]any, event domain.PretouchEvent, closedBars []HourlyBar, rfProbability float64) map[string]any {
+	if !strings.EqualFold(stringValue(parameters["pretouchShadowMode"]), pretouchShadowModeTestnetCollect) {
+		return nil
+	}
+	requested := boolValue(parameters[pretouchShadowT2StaticDownsizeParam])
+	scale := firstPositive(parseFloatValue(parameters["pretouchShadowT2StaticDownsizeScale"]), defaultPretouchShadowT2StaticDownsizeScale)
+	if scale <= 0 || scale > 1 {
+		scale = defaultPretouchShadowT2StaticDownsizeScale
+	}
+	candidate := map[string]any{
+		"candidateId":            pretouchShadowT2StaticDownsizeCandidateID,
+		"stage":                  "testnet_shadow_collect",
+		"requested":              requested,
+		"enabled":                requested,
+		"scale":                  scale,
+		"wouldDownsize":          false,
+		"applied":                false,
+		"mainnetSizingPermitted": false,
+	}
+	context, ok := pretouchClosedBarContextFeatures(closedBars, event)
+	candidate["context"] = pretouchClosedBarContextMetadata(context, event, len(closedBars), ok)
+	if !ok {
+		candidate["status"] = "insufficient_closed_bar_context"
+		return candidate
+	}
+	staticOptimal := event.Eff300s >= 0.925057 && context.ctx12hSideReturnATR <= -0.282982
+	docRuleA := event.TouchExtensionATR <= -0.112263 && context.ctx12hRangeATR >= 3.006207
+	rangeCap := context.ctx12hRangeATR <= 3.500000
+	profitProtection := context.ctx12hSideReturnATR >= 1.45 ||
+		context.ctx4hRangeATR >= 2.36 ||
+		context.ctx12hRangeATR >= 3.98 ||
+		rfProbability >= 0.965
+	wouldDownsize := requested && (staticOptimal || docRuleA) && rangeCap && !profitProtection
+	status := "not_selected"
+	if wouldDownsize {
+		status = "selected"
+	}
+	candidate["status"] = status
+	candidate["wouldDownsize"] = wouldDownsize
+	candidate["profitProtection"] = profitProtection
+	candidate["rangeCapPass"] = rangeCap
+	candidate["branches"] = map[string]any{
+		"staticOptimal": staticOptimal,
+		"docRuleA":      docRuleA,
+	}
+	candidate["features"] = map[string]any{
+		"rf_probability":         rfProbability,
+		"eff_300s":               event.Eff300s,
+		"touch_extension_atr":    event.TouchExtensionATR,
+		"ctx12h_side_return_atr": context.ctx12hSideReturnATR,
+		"ctx4h_range_atr":        context.ctx4hRangeATR,
+		"ctx12h_range_atr":       context.ctx12hRangeATR,
+		"speed_300s_atr":         event.Speed300sATR,
+		"pre_touch_seconds":      event.PreTouchSeconds,
+		"roundtrip_cost_atr":     event.RoundtripCostATR,
+		"signal_bar_start":       event.SignalBarStart.UTC().Format(time.RFC3339),
+		"event_id":               event.EventID,
+	}
+	candidate["thresholds"] = map[string]any{
+		"eff_300s_gte":               0.925057,
+		"ctx12h_side_return_atr_lte": -0.282982,
+		"touch_extension_atr_lte":    -0.112263,
+		"ctx12h_range_atr_gte":       3.006207,
+		"ctx12h_range_atr_lte":       3.500000,
+		"pp_ctx12h_side_gte":         1.45,
+		"pp_ctx4h_range_gte":         2.36,
+		"pp_ctx12h_range_gte":        3.98,
+		"pp_rf_probability_gte":      0.965,
+	}
+	return candidate
+}
+
+type pretouchContextFeatures struct {
+	ctx4hSideReturnATR  float64
+	ctx12hSideReturnATR float64
+	ctx4hRangeATR       float64
+	ctx12hRangeATR      float64
+	closedBarsUsed      int
+	lastClosedBarStart  time.Time
+}
+
+func pretouchClosedBarContextMetadata(context pretouchContextFeatures, event domain.PretouchEvent, closedBarsAvailable int, ok bool) map[string]any {
+	if !ok {
+		return map[string]any{
+			"closedBarsAvailable": closedBarsAvailable,
+			"requiredClosedBars":  13,
+			"atr":                 event.ATR,
+		}
+	}
+	return map[string]any{
+		"ctx4h_side_return_atr":  context.ctx4hSideReturnATR,
+		"ctx12h_side_return_atr": context.ctx12hSideReturnATR,
+		"ctx4h_range_atr":        context.ctx4hRangeATR,
+		"ctx12h_range_atr":       context.ctx12hRangeATR,
+		"closedBarsUsed":         context.closedBarsUsed,
+		"lastClosedBarStart":     context.lastClosedBarStart.UTC().Format(time.RFC3339),
+		"atr":                    event.ATR,
+	}
+}
+
+func pretouchClosedBarContextFeatures(closedBars []HourlyBar, event domain.PretouchEvent) (pretouchContextFeatures, bool) {
+	if event.ATR <= 0 || len(closedBars) == 0 {
+		return pretouchContextFeatures{}, false
+	}
+	filtered := make([]HourlyBar, 0, len(closedBars))
+	for _, bar := range closedBars {
+		if validHourlyBar(bar) && bar.OpenTime.Before(event.SignalBarStart) {
+			filtered = append(filtered, bar)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].OpenTime.Before(filtered[j].OpenTime)
+	})
+	last := len(filtered) - 1
+	if last < 12 {
+		return pretouchContextFeatures{}, false
+	}
+	sideSign := 1.0
+	if strings.EqualFold(event.Side, "short") {
+		sideSign = -1.0
+	}
+	ret := func(hours int) float64 {
+		start := last - hours
+		if start < 0 {
+			return math.NaN()
+		}
+		return (filtered[last].Close - filtered[start].Close) / event.ATR * sideSign
+	}
+	rng := func(hours int) float64 {
+		start := last - hours + 1
+		if start < 0 {
+			return math.NaN()
+		}
+		high := filtered[start].High
+		low := filtered[start].Low
+		for _, bar := range filtered[start : last+1] {
+			if bar.High > high {
+				high = bar.High
+			}
+			if bar.Low < low {
+				low = bar.Low
+			}
+		}
+		return (high - low) / event.ATR
+	}
+	context := pretouchContextFeatures{
+		ctx4hSideReturnATR:  ret(4),
+		ctx12hSideReturnATR: ret(12),
+		ctx4hRangeATR:       rng(4),
+		ctx12hRangeATR:      rng(12),
+		closedBarsUsed:      len(filtered),
+		lastClosedBarStart:  filtered[last].OpenTime,
+	}
+	if !pretouchIsFiniteFloat(context.ctx4hSideReturnATR) ||
+		!pretouchIsFiniteFloat(context.ctx12hSideReturnATR) ||
+		!pretouchIsFiniteFloat(context.ctx4hRangeATR) ||
+		!pretouchIsFiniteFloat(context.ctx12hRangeATR) {
+		return pretouchContextFeatures{}, false
+	}
+	return context, true
+}
+
+func pretouchIsFiniteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func pretouchApplyT2StaticDownsizeShadow(shadowSizing map[string]any, candidate map[string]any) {
+	if shadowSizing == nil || candidate == nil {
+		return
+	}
+	shadowSizing["t2StaticDownsizeCandidate"] = cloneMetadata(candidate)
+	if !boolValue(candidate["wouldDownsize"]) {
+		return
+	}
+	if !boolValue(shadowSizing["submittedRiskOnQuantityEnabled"]) {
+		candidate["appliedBlockReason"] = "risk_on_shadow_quantity_not_enabled"
+		shadowSizing["t2StaticDownsizeCandidate"] = cloneMetadata(candidate)
+		return
+	}
+	before := parseFloatValue(shadowSizing["submittedQuantityAfterShadow"])
+	scale := parseFloatValue(candidate["scale"])
+	if before <= 0 || scale <= 0 || scale > 1 {
+		candidate["appliedBlockReason"] = "invalid_shadow_quantity_or_scale"
+		shadowSizing["t2StaticDownsizeCandidate"] = cloneMetadata(candidate)
+		return
+	}
+	after := before * scale
+	candidate["applied"] = true
+	candidate["submittedQuantityBeforeT2Downsize"] = before
+	candidate["submittedQuantityAfterT2Downsize"] = after
+	shadowSizing["submittedQuantityBeforeT2Downsize"] = before
+	shadowSizing["submittedQuantityAfterT2Downsize"] = after
+	shadowSizing["submittedQuantityAfterShadow"] = after
+	shadowSizing["submittedQuantity"] = after
+	shadowSizing["submittedSizingMode"] = fmt.Sprintf("%s_t2_static_downsize%.2f", stringValue(shadowSizing["submittedSizingMode"]), scale)
+	shadowSizing["t2StaticDownsizeCandidate"] = cloneMetadata(candidate)
 }
 
 func pretouchShadowLeadQuantityBandSizingRequested(parameters map[string]any) bool {

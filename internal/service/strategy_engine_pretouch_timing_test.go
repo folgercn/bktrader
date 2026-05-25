@@ -228,6 +228,114 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	}
 }
 
+func TestPretouchTimingEngineAppliesT2StaticDownsizeForSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT2StaticDownsizeParam] = true
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = testPretouchT2DownsizeSignalBars(start)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT2StaticDownsizeParam] = true
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = testPretouchT2DownsizeSignalBars(start)
+	setPretouchOrderBook(&ctx, 105.09, 105.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["productionSuggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected production suggested quantity 0.12, got %v", got)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.0875) > 1e-9 {
+		t.Fatalf("expected T2 downsize shadow quantity 0.0875, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	t2 := mapValue(shadow["t2StaticDownsizeCandidate"])
+	if t2 == nil {
+		t.Fatalf("expected T2 static downsize candidate metadata: %#v", shadow)
+	}
+	if !boolValue(t2["wouldDownsize"]) || !boolValue(t2["applied"]) {
+		t.Fatalf("expected downsize candidate applied: %#v", t2)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityBeforeT2Downsize"]); math.Abs(got-0.35) > 1e-9 {
+		t.Fatalf("expected before-T2 quantity 0.35, got %v in %#v", got, shadow)
+	}
+	if got := parseFloatValue(shadow["submittedQuantityAfterT2Downsize"]); math.Abs(got-0.0875) > 1e-9 {
+		t.Fatalf("expected after-T2 quantity 0.0875, got %v in %#v", got, shadow)
+	}
+	if !strings.Contains(stringValue(shadow["submittedSizingMode"]), "t2_static_downsize0.25") {
+		t.Fatalf("expected submitted sizing mode to include t2 downsize: %#v", shadow)
+	}
+
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected live signal intent from decision")
+	}
+	if math.Abs(intent.Quantity-0.0875) > 1e-9 {
+		t.Fatalf("expected live intent quantity to submit T2 downsize shadow size 0.0875, got %v", intent.Quantity)
+	}
+}
+
+func TestPretouchTimingEngineDoesNotApplyT2StaticDownsizeOutsideSandbox(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, false)
+	ctx.ExecutionContext.Parameters[pretouchShadowT2StaticDownsizeParam] = true
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = testPretouchT2DownsizeSignalBars(start)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, false)
+	ctx.ExecutionContext.Parameters[pretouchShadowT2StaticDownsizeParam] = true
+	ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"] = testPretouchT2DownsizeSignalBars(start)
+	setPretouchOrderBook(&ctx, 105.09, 105.1)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("expected non-sandbox quantity to remain production 0.12, got %v", got)
+	}
+	shadow := mapValue(decision.Metadata["pretouchShadowSizing"])
+	if shadow == nil {
+		t.Fatalf("expected pretouchShadowSizing metadata: %#v", decision.Metadata)
+	}
+	t2 := mapValue(shadow["t2StaticDownsizeCandidate"])
+	if t2 == nil || !boolValue(t2["wouldDownsize"]) {
+		t.Fatalf("expected T2 candidate to be recorded as would-downsize: %#v", shadow)
+	}
+	if boolValue(t2["applied"]) {
+		t.Fatalf("expected non-sandbox T2 candidate not to apply: %#v", t2)
+	}
+	if got := stringValue(t2["appliedBlockReason"]); got != "risk_on_shadow_quantity_not_enabled" {
+		t.Fatalf("expected risk-on block reason, got %s in %#v", got, t2)
+	}
+}
+
 func TestPretouchTimingEngineMapsMaxRiskOnLeadQuantityToPointFour(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 1.0)
@@ -1306,6 +1414,45 @@ func testPretouchT3OverlaySignalContext(eventTime time.Time, price float64) Stra
 func testPretouchSignalBars(currentStart time.Time) []any {
 	bars := make([]any, 0, 7)
 	for _, bar := range pretouchDetectorClosedBars(currentStart) {
+		bars = append(bars, map[string]any{
+			"symbol":    "ETHUSDT",
+			"timeframe": "1h",
+			"barStart":  bar.OpenTime.Format(time.RFC3339),
+			"open":      bar.Open,
+			"high":      bar.High,
+			"low":       bar.Low,
+			"close":     bar.Close,
+			"isClosed":  true,
+		})
+	}
+	bars = append(bars, map[string]any{
+		"symbol":    "ETHUSDT",
+		"timeframe": "1h",
+		"barStart":  currentStart.Format(time.RFC3339),
+		"open":      100.0,
+		"high":      100.0,
+		"low":       100.0,
+		"close":     100.0,
+		"isClosed":  false,
+	})
+	return bars
+}
+
+func testPretouchT2DownsizeSignalBars(currentStart time.Time) []any {
+	closed := make([]HourlyBar, 0, 14)
+	for i := 14; i >= 1; i-- {
+		openTime := currentStart.Add(-time.Duration(i) * time.Hour)
+		bar := HourlyBar{OpenTime: openTime, Open: 100, High: 105, Low: 95, Close: 100}
+		if i >= 13 {
+			bar = HourlyBar{OpenTime: openTime, Open: 120, High: 121, Low: 119, Close: 120}
+		}
+		if i == 1 {
+			bar = HourlyBar{OpenTime: openTime, Open: 100, High: 104, Low: 96, Close: 100}
+		}
+		closed = append(closed, bar)
+	}
+	bars := make([]any, 0, len(closed)+1)
+	for _, bar := range closed {
 		bars = append(bars, map[string]any{
 			"symbol":    "ETHUSDT",
 			"timeframe": "1h",

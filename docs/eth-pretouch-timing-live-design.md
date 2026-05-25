@@ -116,6 +116,142 @@ T3 overlay 增强的 exact-lead portfolio sensitivity 结果保存在：
 `10-15bp` extra overlay round-trip slippage 仍可接受，`20bp` 时 overlay leg 转负且组合不再跑赢
 `base_lead_adverse10_exact`，应作为 kill-stress。
 
+### 2026-05-22 T2 shadow candidate sweep / 单腿优化推进
+
+本轮只推进 ETHUSDT 1h pretouch T2 standalone 降仓规则搜索，不改变当前
+testnet shadow bundle，不把 T3 deterministic stop-gate 或 PR447 overlay 收益作为 T2 pass 依据。
+
+- Runner:
+  `research/entry_redesign/scripts/timing_probability_unified/t2_shadow_candidate_sweep.py`
+- Output:
+  `research/entry_redesign/scripts/output/timing_probability_unified/t2_shadow_candidate_sweep_20260522/t2_shadow_candidate_sweep_report.md`
+- Control:
+  `base_current`，scenario 固定为 `next_adverse_xslip10bps`。
+- Input:
+  两份 frozen current-lead audit；为对齐 clean T2 base `50.434734%`，只用
+  `selector=eff0817385_prevclose_le_0p969489` + `action_policy=buf020` 携带
+  `baseline_pnl_pct`，不把 CSV 里的 `selected` 布尔列作为二次过滤标签。
+- Allowed features:
+  `rf_probability`、`speed_300s_atr`、`eff_300s`、`touch_extension_atr`、
+  `prev1_close_pos_side`、`prev1_range_atr`、`side`。
+- Sizing action:
+  只允许 downsize，scale ladder 为 `1.0/0.75/0.50/0.25/0.0`。
+- Anti-leak:
+  每个 forward month 只能用 prior months 选阈值规则；不使用 T3 / `combo_pnl_pct`、
+  不使用月度收益标签、不使用 future month。
+
+Walk-forward 结果：
+
+| Candidate | 2022-07..2024-12 delta | 2025-06..2026-04 delta | All delta | Avg scale | Neg months | Max DD | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `static_quality_downsize` | `+2.990405pp` | `-2.914431pp` | `+0.075974pp` | `0.933219` | `16/19` | `-6.625610%` vs base `-7.409576%` | 长窗口能砍掉坏桶，但 canary 明显低于 base，不能 pass。 |
+| `pure_loss_distilled` | `+0.397752pp` | `+0.000000pp` | `+0.397752pp` | `0.955479` | `16/19` | `-7.409576%` vs base `-7.409576%` | 已蒸馏为固定阈值规则，但 long delta 未达到 `+1.0pp`，all delta 也未达 shadow `+2.0pp`。 |
+
+Frozen train-window 诊断进一步确认当前坏桶不适合直接固化成 shadow rule：
+
+| Frozen rule | Train delta | Holdout delta | All delta | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| `speed_300s_atr<=0.251125 => scale 0.25` | `+6.231559pp` | `-2.914431pp` | `+3.317128pp` | 2022-2024 train 很强，但 2025-2026 holdout 失败，不能 freeze。 |
+| `touch_extension_atr<=-0.124973 & speed_300s_atr<=0.251125 => scale 0.00` | `+3.548808pp` | `-3.885908pp` | `-0.337100pp` | pure-loss 蒸馏规则 holdout 更差，不能 freeze。 |
+
+当前结论：**没有 T2 单腿候选通过 testnet shadow gate**。`context_confirmed_downsize`
+需要 4h/12h closed-bar context 列；当前 T2 audit 缺少 `ctx4h_side_return_atr` /
+`ctx12h_side_return_atr`，本轮只能登记为 research watch unavailable。后续 T2 优化应先重建
+closed-bar context 或扩展可解释特征，再重新做 standalone gate；在通过 T2 standalone gate 前，
+不做 Go live metadata wiring。
+
+### 2026-05-25 T2 static downsize 候选推进 / under review
+
+本轮在 2026-05-22 runner 上补齐 closed-bar context 后，继续只推进 T2 standalone downsize。
+它仍不改变当前 testnet shadow bundle，也不把 T3 overlay / combo 收益作为 pass 依据。
+
+- Runner:
+  `research/entry_redesign/scripts/timing_probability_unified/t2_shadow_candidate_sweep.py`
+- Deep-dive helper:
+  `research/entry_redesign/scripts/timing_probability_unified/t2_static_downsize_deep_dive.py`
+- Output:
+  `research/entry_redesign/scripts/output/timing_probability_unified/t2_shadow_candidate_sweep_20260525/t2_shadow_candidate_sweep_report.md`
+- Candidate:
+  `static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize`
+- Rule:
+  若未命中 profit-protection，`ctx12h_range_atr <= 3.500000`，并且命中以下任一风险桶，
+  则把本次 T2 size 缩到 `0.25`：
+  - `eff_300s >= 0.925057 && ctx12h_side_return_atr <= -0.282982`
+  - `touch_extension_atr <= -0.112263 && ctx12h_range_atr >= 3.006207`
+- Profit-protection:
+  `ctx12h_side_return_atr >= 1.45` 或 `ctx4h_range_atr >= 2.36` 或
+  `ctx12h_range_atr >= 3.98` 或 `rf_probability >= 0.965` 时，不降仓。
+
+2026-05-25 rolling walk-forward 结果：
+
+| Candidate | 2022-07..2024-12 delta | 2025-06..2026-04 delta | All delta | Avg scale | Selected | Shadow gate | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `static_optimal_downsize` | `+3.318669pp` | `+0.626243pp` | `+3.944912pp` | `0.979452` | `3/146` | pass | 收益略高，但 canary lift 较弱。 |
+| `static_optimal_or_doc_a_scale025_downsize` | `+2.007711pp` | `+1.718344pp` | `+3.726056pp` | `0.974315` | `5/146` | pass | 原 OR 候选，保留为对照。 |
+| `static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize` | `+5.655933pp` | `+1.718344pp` | `+7.374277pp` | `0.958904` | `8/146` | pass | 新主候选；用圆整的 `ctx12h_range_atr <= 3.50` 限制训练期过度命中，恢复 2024-10..12 收益。 |
+
+固定全周期 deep-dive 显示过滤版 `static_optimal OR doc_rule_a` + `ctx12h_range_atr <= 3.50`
+的潜在空间为：all `+10.009754pp`、canary `+1.718344pp`、avg scale `0.933219`。正式
+rolling runner 只允许 prior months 激活规则，因此 promotion 口径以
+`t2_shadow_candidate_sweep_20260525` 为准。
+
+Stability audit 显示 `ctx12h_range_atr <= 3.40/3.45/3.50` 形成同一收益平台，不是单点阈值；
+在 `3.25..3.60` 区间内有 `8/19` 个阈值同时满足 all/canary/avg-scale/frozen-holdout 约束。
+Frozen train-window 诊断显示过滤版不再是 base passthrough：train `+8.291409pp`、
+holdout `+1.718344pp`、all `+10.009754pp`、holdout avg scale `0.956731`，读数为
+`holdout non-negative; inspect before promotion`。
+
+追加的 purged nested threshold selection 进一步确认收益不依赖固定 `3.50`：每个 forward month
+只用更早月份训练，并空出 1 个 purge month；阈值取训练窗内达到 best delta `95%` 的平台中位数。
+该选择器在 `28/40` 个 forward month 激活，自动选择阈值 `3.35..3.80`，all `+7.687331pp`、
+long `+5.968986pp`、canary `+1.718344pp`、avg scale `0.953767`、selected `9/146`。因此当前状态从
+`research_candidate_under_review` 提升为 `research_candidate_review_ready`；在完成人工 review、
+事件级审计和必要的 live 可重建性确认之前，仍不做 Go live metadata wiring。
+
+Selected-event reconstructability audit 已完成第一层确认：
+
+- Script:
+  `research/entry_redesign/scripts/timing_probability_unified/t2_downsize_selected_event_reconstructability.py`
+- Output:
+  `research/entry_redesign/scripts/output/timing_probability_unified/t2_downsize_selected_event_reconstructability_20260525/`
+- Result:
+  closed-bar context `8/8` 可重建，decision `8/8` 可重建，max feature abs diff
+  `4.4408920985e-16`。
+- Event branches:
+  `static_optimal` `5` 次、`doc_rule_a` `2` 次、`static_optimal+doc_rule_a` `1` 次；
+  所有 selected event 的 PP 均为 `False`。
+
+这条证据只覆盖 4h/12h closed-bar context 与静态规则重放；`eff_300s`、`touch_extension_atr`
+等 intrabar touch 特征仍依赖既有 event ledger。下一步若要进入 testnet shadow metadata wiring，
+必须先确认 live decision metadata 已有同口径字段，或先补 shadow-only telemetry，不得直接改
+production/live 默认行为。
+
+Metadata readiness audit 进一步收窄实现边界：
+
+- Script:
+  `research/entry_redesign/scripts/timing_probability_unified/t2_downsize_live_metadata_readiness_audit.py`
+- Output:
+  `research/entry_redesign/scripts/output/timing_probability_unified/t2_downsize_live_metadata_readiness_20260525/`
+- Static code read:
+  `rf_probability`、`eff_300s`、`touch_extension_atr` 在 advance-plan 路径已有来源；
+  `ctx12h_side_return_atr`、`ctx4h_range_atr`、`ctx12h_range_atr` 不是当前 Go live decision metadata 字段。
+- Production read-only spot-check:
+  `bktrader-ctl order list --limit 20 --json` 抽样显示，最近 ETH entry order 的
+  `intent.metadata.pretouchEvent` / `executionProposal.metadata.pretouchEvent`
+  含 `eff300s`、`touchExtensionAtr`、`speed300sAtr`、`preTouchSeconds`、`atr`；
+  未见 4h/12h context 字段。
+
+2026-05-25 根据人工推进意见，Go 实现边界从 shadow-only metadata 前移为
+**testnet shadow submitted quantity downsize**：
+
+- 只在 `pretouchShadowMode=testnet_shadow_collect` 下构造 `t2StaticDownsizeCandidate`。
+- 只有 `pretouchShadowT2StaticDownsize=true` 且候选规则 selected 时，才进入 downsize 分支。
+- 真实改 `suggestedQuantity` 前必须复用既有 testnet risk-on guard：`submittedRiskOnQuantityEnabled=true`。
+  也就是 live 语义、账户 `sandbox=true`、`executionMode=rest`、depth/spread guard 通过后，才允许把
+  `submittedQuantityAfterShadow` 乘以 `pretouchShadowT2StaticDownsizeScale`，默认 `0.25`。
+- 非 sandbox / mainnet / guard 未通过时，只记录 would-downsize 与 block reason，不改变 submitted quantity、
+  dispatchMode 或 production suggested quantity。
+
 仓位放大口径：
 
 - `2.5x` T3 overlay（`[0.50,0.25]`）已完成 actual lifecycle replay 和 exact-lead portfolio：
@@ -286,7 +422,8 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | `2.0x T3 overlay` | **已接入 testnet shadow 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。scale/share 和最终 submitted quantity 均有硬上限。 |
 | T3 RF/cost quality sizing | **已接入 testnet shadow artifact + absolute quantity band** | `data/pretouch_t3_overlay_rf_model.json` 使用 T3 专用 RF 估计事件胜率，再把 overlay 直接映射到 `0.20..0.40` ETH absolute quantity band；默认 `0.080` ETH fixed overlay 等价于 `2.5..5.0x` quality multiplier。模型缺失或 feature build failed 时默认阻断 overlay submit 并写 `model_missing` / `feature_build_failed` metadata，避免污染 q020/q040 candidate 样本；只有显式 `pretouchShadowOverlayQualityFallbackSubmit=true` 才允许 fixed overlay fallback submit。 |
 | T2/lead quantity band | **已接入 testnet shadow 真实提交数量** | `testnet_shadow_collect` 默认启用 risk-on lead sizing，可用 `pretouchShadowSubmitRiskOnQuantity=false` 显式关闭；只有 live 语义、账户 binding `sandbox=true`、`executionMode=rest` 且 depth/spread guard 通过时，`suggestedQuantity` 才从 production sizing 映射到 `0.20..0.40 ETH`。旧 `1.5x` lead scale 仍保留为无 band 参数时的兼容 fallback。 |
-| 当前 submitted sizing | **testnet shadow 条件放大** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty` 仍先按 production RF/cost 生成；通过 risk-on guard 后再按 `productionSuggestedQuantity / maxProductionQuantity` 的质量分数映射到 `0.20..0.40 ETH`。T3 overlay 为独立 `entry-t3-overlay` intent，T3 RF/cost quality 直接映射到 `0.20..0.40 ETH`，并受 `pretouchShadowMaxSubmittedQuantity=0.40` 限制。 |
+| T2 static downsize | **已接入 testnet shadow 真实提交数量** | `static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize` 在 `testnet_shadow_collect` 下默认启用；命中规则且未触发 PP 时，对已通过 risk-on guard 的 `submittedQuantityAfterShadow` 乘以 `0.25`。非 sandbox / guard 未通过只记录 candidate 与 block reason，不改 production quantity。 |
+| 当前 submitted sizing | **testnet shadow 条件放大 + 条件降仓** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty` 仍先按 production RF/cost 生成；通过 risk-on guard 后再按 `productionSuggestedQuantity / maxProductionQuantity` 的质量分数映射到 `0.20..0.40 ETH`。若 T2 static downsize 命中，再对该 testnet shadow submitted quantity 乘以 `0.25`。T3 overlay 为独立 `entry-t3-overlay` intent，T3 RF/cost quality 直接映射到 `0.20..0.40 ETH`，并受 `pretouchShadowMaxSubmittedQuantity=0.40` 限制。 |
 | Testnet shadow | **允许进入 risk-on 采样阶段** | 用真实 `0.20..0.40 ETH` lead quantity 和 T3 overlay `0.20..0.40 ETH` entry proposal 采集 testnet decision/order/fill/depth telemetry；readiness 状态仍不是 mainnet live candidate。 |
 
 #### Shadow 策略细节
