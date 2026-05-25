@@ -335,6 +335,8 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchShadowCandidateID":                            defaultPretouchShadowCandidateID,
 		"pretouchShadowLeadScale":                              defaultPretouchShadowLeadScale,
 		pretouchShadowLeadQuantityBandSizingParam:              true,
+		pretouchShadowT2StaticDownsizeParam:                    true,
+		"pretouchShadowT2StaticDownsizeScale":                  defaultPretouchShadowT2StaticDownsizeScale,
 		"pretouchShadowLeadQuantityMinQuantity":                defaultPretouchShadowLeadQuantityMinQty,
 		"pretouchShadowLeadQuantityMaxQuantity":                defaultPretouchShadowLeadQuantityMaxQty,
 		"pretouchShadowOverlayScale":                           defaultPretouchShadowOverlayScale,
