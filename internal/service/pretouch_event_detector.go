@@ -511,16 +511,22 @@ func pretouchLongStructureReady(prevHigh2, prevHigh1, toleranceBps float64) bool
 	if prevHigh2 <= 0 || prevHigh1 <= 0 {
 		return false
 	}
-	// A zero tolerance keeps the original_t2 structure strictly above/below
-	// the previous bar; positive tolerance requires additional separation.
-	return prevHigh2 > prevHigh1*(1+toleranceBps/10000.0)
+	toleranceBps = sanitizeBreakoutShapeToleranceBps(toleranceBps)
+	if toleranceBps <= 0 {
+		return prevHigh2 > prevHigh1
+	}
+	return prevHigh2 >= prevHigh1*(1-toleranceBps/10000.0)
 }
 
 func pretouchShortStructureReady(prevLow2, prevLow1, toleranceBps float64) bool {
 	if prevLow2 <= 0 || prevLow1 <= 0 {
 		return false
 	}
-	return prevLow2 < prevLow1*(1-toleranceBps/10000.0)
+	toleranceBps = sanitizeBreakoutShapeToleranceBps(toleranceBps)
+	if toleranceBps <= 0 {
+		return prevLow2 < prevLow1
+	}
+	return prevLow2 <= prevLow1*(1+toleranceBps/10000.0)
 }
 
 func pretouchT3LongStructureReady(prevHigh3, prevHigh2, prevHigh1 float64) bool {

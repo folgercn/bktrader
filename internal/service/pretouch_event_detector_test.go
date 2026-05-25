@@ -55,6 +55,32 @@ func TestPretouchEventDetectorDetectsLongAndUsesBookCost(t *testing.T) {
 	}
 }
 
+func TestPretouchEventDetectorAllowsNearEqualLongBreakoutWithinTolerance(t *testing.T) {
+	start := time.Date(2026, 5, 25, 14, 0, 0, 0, time.UTC)
+	config := DefaultPretouchDetectorConfig()
+	config.StructureToleranceBps = 0.5
+	config.MinSpeed300sATR = 0.0
+	detector := NewPretouchEventDetector("ETHUSDT", config)
+	closedBars := pretouchDetectorClosedBars(start)
+	closedBars[len(closedBars)-2] = HourlyBar{OpenTime: start.Add(-2 * time.Hour), Open: 2113.88, High: 2118.26, Low: 2111.51, Close: 2116.33}
+	closedBars[len(closedBars)-1] = HourlyBar{OpenTime: start.Add(-1 * time.Hour), Open: 2116.33, High: 2118.33, Low: 2113.74, Close: 2115.50}
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     2115.50,
+		High:     2115.50,
+		Low:      2115.50,
+		Close:    2115.50,
+	})
+
+	result := detector.OnTick(TickData{Time: start.Add(60 * time.Second), Price: 2127.69})
+	if !result.Detected {
+		t.Fatalf("expected near-equal long breakout within 0.5 bps tolerance, got reason=%s", result.Reason)
+	}
+	if result.Event.Side != "long" || result.Event.Level != 2118.26 {
+		t.Fatalf("expected long breakout at prev_high_2, got side=%s level=%v", result.Event.Side, result.Event.Level)
+	}
+}
+
 func TestPretouchEventDetectorSyncBarsSortsClosedHistory(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	bars := pretouchDetectorClosedBars(start)
