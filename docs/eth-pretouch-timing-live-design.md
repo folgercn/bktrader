@@ -417,7 +417,7 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | 模块 | 提交版本状态 | 说明 |
 | --- | --- | --- |
 | `breakout_shape_tolerance_bps` | **已接入当前 ETH pretouch live** | `PretouchEventDetector` 使用 `StructureToleranceBps` 判断 `prev_high_2` / `prev_low_2` 是否 ready；默认来自 `defaultT2BreakoutShapeToleranceBps=0.5`，session 参数可覆盖非负值。 |
-| Breakout 容差语义 | **不是放宽 near-equal** | 当前 `0.5` bps 是 restrictive 分离度：long 需要 `prev_high_2 > prev_high_1 * (1 + 0.5/10000)`，short 需要 `prev_low_2 < prev_low_1 * (1 - 0.5/10000)`。这轮 research 证明不能直接把 near-equal/slack 结构推成 live 默认。 |
+| Breakout 容差语义 | **near-equal shape tolerance** | 当前 `0.5` bps 是 original_t2 结构容差：long 需要 `prev_high_2 >= prev_high_1 * (1 - 0.5/10000)`，short 需要 `prev_low_2 <= prev_low_1 * (1 + 0.5/10000)`；breakout level 仍锁定 `prev_high_2` / `prev_low_2`，不额外放宽触价门槛。 |
 | T3 结构 / `t3_swing` | **已接入 testnet shadow event source** | Go live engine 在 original_t2 未触发时检测 T3 swing：long 需 `prev_high_3 > prev_high_2 && prev_high_3 > prev_high_1 && prev_high_1 > prev_high_2`，short 对称；仅在 `testnet_shadow_collect` 下启用，不改变 production lead。 |
 | `2.0x T3 overlay` | **已接入 testnet shadow 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。scale/share 和最终 submitted quantity 均有硬上限。 |
 | T3 RF/cost quality sizing | **已接入 testnet shadow artifact + absolute quantity band** | `data/pretouch_t3_overlay_rf_model.json` 使用 T3 专用 RF 估计事件胜率，再把 overlay 直接映射到 `0.20..0.40` ETH absolute quantity band；默认 `0.080` ETH fixed overlay 等价于 `2.5..5.0x` quality multiplier。模型缺失或 feature build failed 时默认阻断 overlay submit 并写 `model_missing` / `feature_build_failed` metadata，避免污染 q020/q040 candidate 样本；只有显式 `pretouchShadowOverlayQualityFallbackSubmit=true` 才允许 fixed overlay fallback submit。 |
@@ -432,7 +432,7 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | --- | --- |
 | Symbol / timeframe | `ETHUSDT` / `1h` |
 | Event source | Lead 仍为 production-aligned `pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1`；overlay 仅为 testnet shadow `t3_swing` |
-| Breakout shape | Lead 继续使用当前 live `breakout_shape_tolerance_bps=0.5` restrictive 结构；T3 overlay 使用严格三根 bar swing 结构，不放宽 near-equal tolerance |
+| Breakout shape | Lead 使用 live `breakout_shape_tolerance_bps=0.5` near-equal original_t2 结构容差；T3 overlay 使用严格三根 bar swing 结构，不放宽 near-equal tolerance |
 | Pretouch window | Lead 与 overlay 均默认 `pre_touch_seconds <= 1800` |
 | Quality gates | Lead: `eff_300s <= 1.0`、`speed_300s_atr >= 0.228106`、`cost_q50 <= 0.116865` 后按 `pretouchCostQ50Penalty=0.50` 惩罚；T3 overlay: `abs(speed_300s_atr) >= 0.35`、`eff_300s <= 1.0` |
 | Model | Lead 使用 `data/pretouch_model.json` / `20260515_v1` 的 Go-native DT3 + RF；T3 overlay 使用 `data/pretouch_t3_overlay_rf_model.json` / `20260520_t3_overlay_rf_cost_v1` 只做 quality sizing，不做 timing skip。 |
@@ -781,15 +781,15 @@ PYTHONPATH=research:research/entry_redesign/scripts \
 
 ## Breakout 结构展开基准
 
-当前生产的 `breakout_shape_tolerance_bps=0.5` 不是“放宽触发容差”，而是要求 `prev_high_2` /
-`prev_low_2` 相对上一根 closed bar 有额外分离度：
+当前生产的 `breakout_shape_tolerance_bps=0.5` 是 original_t2 结构容差，不是更高的开仓门槛。它只允许
+`prev_high_2` / `prev_low_2` 与上一根 closed bar 在 0.5bps 内近似持平；breakout level 仍锁定
+`prev_high_2` / `prev_low_2`，当前价格必须真实触达该 level：
 
-- Long ready: `prev_high_2 > prev_high_1 * (1 + tolerance_bps / 10000)`
-- Short ready: `prev_low_2 < prev_low_1 * (1 - tolerance_bps / 10000)`
+- Long ready: `prev_high_2 >= prev_high_1 * (1 - tolerance_bps / 10000)`
+- Short ready: `prev_low_2 <= prev_low_1 * (1 + tolerance_bps / 10000)`
 
-因此它比原始 `original_t2` 严格比较更窄。后续如果要捕获 near-equal 结构，例如相邻两根 bar 的
-high/low 近乎持平但当前 bar 已经触达 `prev_high_2` / `prev_low_2`，必须在当前 lead 上展开，而不是切回
-`local_context_event_execution` 或旧 V6 口径。
+2026-05-25 生产排查发现 live `PretouchEventDetector` 曾把该容差反向实现成 restrictive separation；
+修复后它与 `strategy_registry.go` / replay 里的 T2 helper 语义保持一致。
 
 建议 research 展开顺序：
 
