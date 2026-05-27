@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wuyaocheng/bktrader/internal/store/memory"
 )
@@ -92,6 +93,37 @@ func TestPretouchT3OverlayTrainerBuildsLoadableBundle(t *testing.T) {
 	probability := loaded.RFModel.PredictProba([]float64{0.7, 0.4, 0.9, 0.02, 240, 0.1, 0})
 	if math.IsNaN(probability) || probability < 0 || probability > 1 {
 		t.Fatalf("expected bounded probability, got %v", probability)
+	}
+}
+
+func TestPretouchLeadRetrainRejectsStaleTimingLabels(t *testing.T) {
+	dir := t.TempDir()
+	eventsPath := filepath.Join(dir, "events.csv")
+	labelsPath := filepath.Join(dir, "unified_trades.csv")
+	modelPath := filepath.Join(dir, "pretouch_model.json")
+	if err := os.WriteFile(eventsPath, []byte("event_id,symbol,touch_time\n"), 0644); err != nil {
+		t.Fatalf("write events fixture: %v", err)
+	}
+	if err := os.WriteFile(labelsPath, []byte("event_id,timing_prediction,speed_gate_pass,delay_pnl_pct\n"), 0644); err != nil {
+		t.Fatalf("write labels fixture: %v", err)
+	}
+	staleTime := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(labelsPath, staleTime, staleTime); err != nil {
+		t.Fatalf("set stale labels mtime: %v", err)
+	}
+
+	platform := NewPlatform(memory.NewStore())
+	err := platform.retrainPretouchLeadModel(PretouchModelSchedulerConfig{
+		LeadEventsCSVPath:       eventsPath,
+		LeadTimingLabelsCSVPath: labelsPath,
+		LeadTimingLabelsMaxAge:  time.Hour,
+		LeadModelPath:           modelPath,
+	})
+	if err == nil {
+		t.Fatal("expected stale timing labels to block lead retrain")
+	}
+	if !strings.Contains(err.Error(), "is stale") {
+		t.Fatalf("expected stale labels error, got %v", err)
 	}
 }
 

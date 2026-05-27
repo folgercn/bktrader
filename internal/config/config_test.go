@@ -599,12 +599,17 @@ func TestLoadPretouchModelSchedulerDefaultsAndEnvOverrides(t *testing.T) {
 	if cfg.PretouchModelReloadIntervalSec != 30 || cfg.PretouchModelRetrainIntervalSec != 86400 {
 		t.Fatalf("unexpected pretouch scheduler defaults: reload=%d retrain=%d", cfg.PretouchModelReloadIntervalSec, cfg.PretouchModelRetrainIntervalSec)
 	}
+	if cfg.PretouchLeadTimingLabelsMaxAgeH != 48 {
+		t.Fatalf("expected default timing-label freshness guard 48h, got %d", cfg.PretouchLeadTimingLabelsMaxAgeH)
+	}
 
 	t.Setenv("BK_PRETOUCH_MODEL_HOT_RELOAD_ENABLED", "false")
 	t.Setenv("BK_PRETOUCH_MODEL_RETRAIN_INTERVAL_SECONDS", "7200")
 	t.Setenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_ENABLED", "false")
 	t.Setenv("BK_PRETOUCH_MODEL_PATH", "/models/lead.json")
 	t.Setenv("BK_PRETOUCH_RETRAIN_EVENTS_CSV", "/events/lead.csv")
+	t.Setenv("BK_PRETOUCH_TIMING_LABELS_CSV", "/events/lead-labels.csv")
+	t.Setenv("BK_PRETOUCH_TIMING_LABELS_MAX_AGE_HOURS", "6")
 	t.Setenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH", "/models/t3.json")
 	t.Setenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_TRADES_CSV", "/events/t3.csv")
 
@@ -620,9 +625,13 @@ func TestLoadPretouchModelSchedulerDefaultsAndEnvOverrides(t *testing.T) {
 	}
 	if cfg.PretouchModelPath != "/models/lead.json" ||
 		cfg.PretouchLeadRetrainEventsCSV != "/events/lead.csv" ||
+		cfg.PretouchLeadTimingLabelsCSV != "/events/lead-labels.csv" ||
 		cfg.PretouchT3OverlayModelPath != "/models/t3.json" ||
 		cfg.PretouchT3RetrainTradesCSV != "/events/t3.csv" {
 		t.Fatalf("unexpected pretouch path overrides: %+v", cfg)
+	}
+	if cfg.PretouchLeadTimingLabelsMaxAgeH != 6 {
+		t.Fatalf("expected timing labels max age override 6h, got %d", cfg.PretouchLeadTimingLabelsMaxAgeH)
 	}
 }
 
