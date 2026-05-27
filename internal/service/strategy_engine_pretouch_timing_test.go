@@ -727,6 +727,46 @@ func TestPretouchTimingEngineSubmitsT3OverlayFromSignalBarHighTouch(t *testing.T
 	}
 }
 
+func TestPretouchTimingEngineSubmitsLeadFromSignalBarHighTouch(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchSignalContext(start, 100.0)
+
+	if decision, err := engine.EvaluateSignal(ctx); err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	} else if decision.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", decision)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 103.5)
+	setPretouchOrderBook(&ctx, 103.49, 103.50)
+	bars := ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
+	current := bars[len(bars)-1].(map[string]any)
+	current["high"] = 105.2
+	current["close"] = 103.5
+
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected lead advance-plan from signal bar high touch, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	event, ok := decision.Metadata["pretouchEvent"].(domain.PretouchEvent)
+	if !ok {
+		t.Fatalf("expected pretouchEvent metadata, got %#v", decision.Metadata["pretouchEvent"])
+	}
+	if event.Side != "long" || event.Level != 105 {
+		t.Fatalf("expected long lead event at level 105, got %#v", event)
+	}
+	if event.TouchPrice != 105.2 {
+		t.Fatalf("expected signal bar high as lead touch price, got %v", event.TouchPrice)
+	}
+	if got := stringValue(decision.Metadata["signalKind"]); got != "entry" {
+		t.Fatalf("expected lead entry signal kind, got %s", got)
+	}
+}
+
 func TestPretouchT3DeterministicStopGateSelectsHardStopProfile(t *testing.T) {
 	event := domain.PretouchEvent{
 		EventID:           "ETHUSDT_t3_20260515_120500_long",
