@@ -1,0 +1,153 @@
+{
+  "note": "Research-only lead-side T2 reentry schedule revalidation.",
+  "lead_events": "/Users/wuyaocheng/Downloads/bkTrader/research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_lead_exact_exposure/lead_exact_adverse10_exposure_windows.csv",
+  "reentry_size_schedule": [
+    0.2,
+    0.1
+  ],
+  "max_trades_per_bar": 2,
+  "reentry_fill_policy": "strict_next_second_cross",
+  "metrics": {
+    "variant": "canonical_lead_t2_reentry_schedule",
+    "calendar_sum_pct": -0.12202,
+    "delta_vs_current_qband_lead_pct": -61.192937,
+    "delta_vs_base_lead_adverse10_pct": -23.093668,
+    "worst_month_pct": -0.05238,
+    "negative_months": 3,
+    "total_trades": 10,
+    "external_trades": 10,
+    "external_events_available": 62,
+    "external_locks": 62,
+    "entry_reasons": {
+      "Zero-Initial-Reentry": 5,
+      "SL-Reentry": 5
+    },
+    "exit_reasons": {
+      "SL": 10
+    },
+    "reentry_fill_rejects": {
+      "same_second_zero_initial": 62,
+      "no_reclaim_cross": 330504,
+      "missing_prev_close": 58
+    },
+    "by_month": {
+      "2025-06": -0.02159,
+      "2025-07": 0.0,
+      "2025-08": 0.0,
+      "2025-09": -0.04805,
+      "2025-10": -0.05238
+    }
+  },
+  "silos": [
+    {
+      "month": "2025-06",
+      "return_pct": -0.08,
+      "final_balance": 99918.42,
+      "total_trades": 2,
+      "external_trades": 2,
+      "external_net_pnl_pct": -0.02159,
+      "max_dd_pct": -0.06,
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 1,
+        "SL-Reentry": 1
+      },
+      "exit_reasons": {
+        "SL": 2
+      },
+      "external_events_available": 13,
+      "external_locks": 13,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 13,
+        "no_reclaim_cross": 60821,
+        "missing_prev_close": 12
+      },
+      "elapsed_seconds": 81.88
+    },
+    {
+      "month": "2025-07",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "total_trades": 0,
+      "external_trades": 0,
+      "external_net_pnl_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "external_events_available": 13,
+      "external_locks": 13,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 13,
+        "no_reclaim_cross": 76471,
+        "missing_prev_close": 12
+      },
+      "elapsed_seconds": 84.52
+    },
+    {
+      "month": "2025-08",
+      "return_pct": 0.0,
+      "final_balance": 100000.0,
+      "total_trades": 0,
+      "external_trades": 0,
+      "external_net_pnl_pct": 0.0,
+      "max_dd_pct": 0.0,
+      "entry_reasons": {},
+      "exit_reasons": {},
+      "external_events_available": 13,
+      "external_locks": 13,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 13,
+        "no_reclaim_cross": 69834,
+        "missing_prev_close": 12
+      },
+      "elapsed_seconds": 85.16
+    },
+    {
+      "month": "2025-09",
+      "return_pct": -0.17,
+      "final_balance": 99832.03,
+      "total_trades": 4,
+      "external_trades": 4,
+      "external_net_pnl_pct": -0.04805,
+      "max_dd_pct": -0.15,
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2,
+        "SL-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 4
+      },
+      "external_events_available": 14,
+      "external_locks": 14,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 14,
+        "no_reclaim_cross": 78569,
+        "missing_prev_close": 14
+      },
+      "elapsed_seconds": 82.16
+    },
+    {
+      "month": "2025-10",
+      "return_pct": -0.17,
+      "final_balance": 99827.69,
+      "total_trades": 4,
+      "external_trades": 4,
+      "external_net_pnl_pct": -0.05238,
+      "max_dd_pct": -0.15,
+      "entry_reasons": {
+        "Zero-Initial-Reentry": 2,
+        "SL-Reentry": 2
+      },
+      "exit_reasons": {
+        "SL": 4
+      },
+      "external_events_available": 9,
+      "external_locks": 9,
+      "reentry_fill_rejects": {
+        "same_second_zero_initial": 9,
+        "no_reclaim_cross": 44809,
+        "missing_prev_close": 8
+      },
+      "elapsed_seconds": 84.39
+    }
+  ]
+}

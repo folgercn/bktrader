@@ -14,16 +14,18 @@ const (
 )
 
 type PretouchModelSchedulerConfig struct {
-	HotReloadEnabled       bool
-	ReloadInterval         time.Duration
-	RetrainEnabled         bool
-	RetrainInterval        time.Duration
-	LeadRetrainEnabled     bool
-	T3RetrainEnabled       bool
-	LeadModelPath          string
-	LeadEventsCSVPath      string
-	T3OverlayModelPath     string
-	T3OverlayTradesCSVPath string
+	HotReloadEnabled        bool
+	ReloadInterval          time.Duration
+	RetrainEnabled          bool
+	RetrainInterval         time.Duration
+	LeadRetrainEnabled      bool
+	T3RetrainEnabled        bool
+	LeadModelPath           string
+	LeadEventsCSVPath       string
+	LeadTimingLabelsCSVPath string
+	LeadTimingLabelsMaxAge  time.Duration
+	T3OverlayModelPath      string
+	T3OverlayTradesCSVPath  string
 }
 
 type pretouchModelFileState struct {
@@ -82,6 +84,12 @@ func normalizePretouchModelSchedulerConfig(cfg PretouchModelSchedulerConfig, eng
 	}
 	if strings.TrimSpace(cfg.LeadEventsCSVPath) == "" {
 		cfg.LeadEventsCSVPath = DefaultPretouchTrainerConfig().EventsCSVPath
+	}
+	if strings.TrimSpace(cfg.LeadTimingLabelsCSVPath) == "" {
+		cfg.LeadTimingLabelsCSVPath = DefaultPretouchTrainerConfig().TimingLabelsCSVPath
+	}
+	if cfg.LeadTimingLabelsMaxAge < 0 {
+		cfg.LeadTimingLabelsMaxAge = 0
 	}
 	if strings.TrimSpace(cfg.T3OverlayTradesCSVPath) == "" {
 		cfg.T3OverlayTradesCSVPath = DefaultPretouchT3OverlayTrainerConfig().TradesCSVPath
@@ -189,8 +197,12 @@ func (p *Platform) retrainPretouchLeadModel(cfg PretouchModelSchedulerConfig) er
 	if err := ensureReadableNonEmptyFile(cfg.LeadEventsCSVPath); err != nil {
 		return err
 	}
+	if err := ensureReadableNonEmptyFreshFile(cfg.LeadTimingLabelsCSVPath, cfg.LeadTimingLabelsMaxAge); err != nil {
+		return err
+	}
 	trainCfg := DefaultPretouchTrainerConfig()
 	trainCfg.EventsCSVPath = cfg.LeadEventsCSVPath
+	trainCfg.TimingLabelsCSVPath = cfg.LeadTimingLabelsCSVPath
 	trainCfg.ModelOutPath = cfg.LeadModelPath
 	return TrainPretouchModel(trainCfg)
 }
@@ -206,16 +218,32 @@ func (p *Platform) retrainPretouchT3OverlayModel(cfg PretouchModelSchedulerConfi
 }
 
 func ensureReadableNonEmptyFile(path string) error {
+	_, err := statReadableNonEmptyFile(path)
+	return err
+}
+
+func ensureReadableNonEmptyFreshFile(path string, maxAge time.Duration) error {
+	info, err := statReadableNonEmptyFile(path)
+	if err != nil {
+		return err
+	}
+	if maxAge > 0 && time.Since(info.ModTime()) > maxAge {
+		return fmt.Errorf("model retrain source %s is stale: mod_time=%s max_age=%s", path, info.ModTime().UTC().Format(time.RFC3339), maxAge)
+	}
+	return nil
+}
+
+func statReadableNonEmptyFile(path string) (os.FileInfo, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return fmt.Errorf("model retrain source path is empty")
+		return nil, fmt.Errorf("model retrain source path is empty")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("model retrain source %s unavailable: %w", path, err)
+		return nil, fmt.Errorf("model retrain source %s unavailable: %w", path, err)
 	}
 	if info.IsDir() || info.Size() <= 0 {
-		return fmt.Errorf("model retrain source %s is not a non-empty file", path)
+		return nil, fmt.Errorf("model retrain source %s is not a non-empty file", path)
 	}
-	return nil
+	return info, nil
 }

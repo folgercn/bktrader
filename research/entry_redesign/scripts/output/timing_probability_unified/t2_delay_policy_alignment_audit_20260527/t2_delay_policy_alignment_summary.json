@@ -1,0 +1,441 @@
+{
+  "note": "Research-only deployable delay policy audit for T2 lead alignment.",
+  "diagnostics": {
+    "symbol": "ETHUSDT",
+    "scenario": "next_adverse_xslip10bps",
+    "lead_replayed_events": 68,
+    "lead_delay_errors": 0,
+    "lead_exec_params": {
+      "initial_stop_atr": 0.45,
+      "stop_buffer_atr": 0.05,
+      "stop_cap_atr": 0.8,
+      "min_stop_bps": 12.0,
+      "breakeven_at_r": 0.8,
+      "cost_lock_bps": 10.0,
+      "trail_start_r": 1.5,
+      "trail_buffer_atr": 0.05,
+      "max_hold_hours": 2.0,
+      "slippage": 0.0002,
+      "entry_fee": 0.0002,
+      "exit_fee": 0.0004
+    }
+  },
+  "artifact_alignment": {
+    "model_path": "/Users/wuyaocheng/Downloads/bkTrader/data/pretouch_model.json",
+    "ledger_timing_counts": {
+      "fast": 60,
+      "slow": 8
+    },
+    "artifact_timing_counts": {
+      "fast": 59,
+      "skip": 6,
+      "slow": 3
+    },
+    "timing_match_count": 58,
+    "timing_mismatch_count": 10,
+    "artifact_slow_count": 3
+  },
+  "references": {
+    "current_qband_selected_delay_lead_pct": 61.07091667649647,
+    "base_lead_adverse10_pct": 22.97164769930056
+  },
+  "metrics": [
+    {
+      "policy_id": "fixed_d0_all_non_skip",
+      "calendar_sum_pct": 56.342405,
+      "delta_vs_current_qband_lead_pct": -4.728512,
+      "delta_vs_base_lead_adverse10_pct": 33.370757,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.754482,
+      "selected_delay_counts": {
+        "D0": 62,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 20,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 39,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.423186,
+        "2025-07": 10.12909,
+        "2025-08": 18.337577,
+        "2025-09": 13.135583,
+        "2025-10": 3.316968
+      }
+    },
+    {
+      "policy_id": "fixed_d5_all_non_skip",
+      "calendar_sum_pct": 53.053083,
+      "delta_vs_current_qband_lead_pct": -8.017834,
+      "delta_vs_base_lead_adverse10_pct": 30.081435,
+      "worst_month_pct": 0.36548,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.64051,
+      "selected_delay_counts": {
+        "D5": 62,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 21,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 38,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.737126,
+        "2025-07": 9.707045,
+        "2025-08": 17.757313,
+        "2025-09": 13.486119,
+        "2025-10": 0.36548
+      }
+    },
+    {
+      "policy_id": "fixed_d10_all_non_skip",
+      "calendar_sum_pct": 47.424282,
+      "delta_vs_current_qband_lead_pct": -13.646635,
+      "delta_vs_base_lead_adverse10_pct": 24.452634,
+      "worst_month_pct": -0.753471,
+      "negative_months": 1,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.848721,
+      "selected_delay_counts": {
+        "D10": 62,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 21,
+        "InitialSL": 3,
+        "MaxHoldExit": 2,
+        "TrailingSL": 36,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.523877,
+        "2025-07": 7.011656,
+        "2025-08": 17.408113,
+        "2025-09": 12.234108,
+        "2025-10": -0.753471
+      }
+    },
+    {
+      "policy_id": "fixed_d15_all_non_skip",
+      "calendar_sum_pct": 43.86056,
+      "delta_vs_current_qband_lead_pct": -17.210357,
+      "delta_vs_base_lead_adverse10_pct": 20.888912,
+      "worst_month_pct": 0.936907,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.640415,
+      "selected_delay_counts": {
+        "D15": 62,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 21,
+        "InitialSL": 3,
+        "MaxHoldExit": 2,
+        "TrailingSL": 36,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 9.77418,
+        "2025-07": 6.337454,
+        "2025-08": 14.990291,
+        "2025-09": 11.821728,
+        "2025-10": 0.936907
+      }
+    },
+    {
+      "policy_id": "fixed_pullback_all_non_skip",
+      "calendar_sum_pct": 22.639653,
+      "delta_vs_current_qband_lead_pct": -38.431264,
+      "delta_vs_base_lead_adverse10_pct": -0.331995,
+      "worst_month_pct": -1.993544,
+      "negative_months": 1,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -4.717254,
+      "selected_delay_counts": {
+        "none": 6,
+        "pullback": 62
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 23,
+        "InitialSL": 9,
+        "MaxHoldExit": 1,
+        "TrailingSL": 29,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 2.99981,
+        "2025-07": 8.967354,
+        "2025-08": 3.286964,
+        "2025-09": 9.379069,
+        "2025-10": -1.993544
+      }
+    },
+    {
+      "policy_id": "fast_d0_slow_d10",
+      "calendar_sum_pct": 56.337503,
+      "delta_vs_current_qband_lead_pct": -4.733414,
+      "delta_vs_base_lead_adverse10_pct": 33.365855,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.734089,
+      "selected_delay_counts": {
+        "D0": 55,
+        "D10": 7,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 20,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 39,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.423186,
+        "2025-07": 10.028073,
+        "2025-08": 18.338194,
+        "2025-09": 13.231081,
+        "2025-10": 3.316968
+      }
+    },
+    {
+      "policy_id": "fast_d0_slow_d15",
+      "calendar_sum_pct": 56.30752,
+      "delta_vs_current_qband_lead_pct": -4.763397,
+      "delta_vs_base_lead_adverse10_pct": 33.335872,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.714192,
+      "selected_delay_counts": {
+        "D0": 55,
+        "D15": 7,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 20,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 39,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.421993,
+        "2025-07": 10.046768,
+        "2025-08": 18.337577,
+        "2025-09": 13.184213,
+        "2025-10": 3.316968
+      }
+    },
+    {
+      "policy_id": "fast_d0_slow_pullback",
+      "calendar_sum_pct": 58.60016,
+      "delta_vs_current_qband_lead_pct": -2.470757,
+      "delta_vs_base_lead_adverse10_pct": 35.628512,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.775247,
+      "selected_delay_counts": {
+        "D0": 55,
+        "none": 6,
+        "pullback": 7
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 18,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 41,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 12.73727,
+        "2025-07": 11.229786,
+        "2025-08": 19.177674,
+        "2025-09": 12.138462,
+        "2025-10": 3.316968
+      }
+    },
+    {
+      "policy_id": "fast_d5_slow_d10",
+      "calendar_sum_pct": 52.877594,
+      "delta_vs_current_qband_lead_pct": -8.193323,
+      "delta_vs_base_lead_adverse10_pct": 29.905946,
+      "worst_month_pct": 0.36548,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.66176,
+      "selected_delay_counts": {
+        "D10": 7,
+        "D5": 55,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 21,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 38,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.737126,
+        "2025-07": 9.636185,
+        "2025-08": 17.757313,
+        "2025-09": 13.38149,
+        "2025-10": 0.36548
+      }
+    },
+    {
+      "policy_id": "fast_d5_slow_d15",
+      "calendar_sum_pct": 52.847611,
+      "delta_vs_current_qband_lead_pct": -8.223306,
+      "delta_vs_base_lead_adverse10_pct": 29.875963,
+      "worst_month_pct": 0.36548,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.641863,
+      "selected_delay_counts": {
+        "D15": 7,
+        "D5": 55,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 21,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 38,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.735933,
+        "2025-07": 9.65488,
+        "2025-08": 17.756696,
+        "2025-09": 13.334622,
+        "2025-10": 0.36548
+      }
+    },
+    {
+      "policy_id": "fast_d5_slow_pullback",
+      "calendar_sum_pct": 55.140252,
+      "delta_vs_current_qband_lead_pct": -5.930665,
+      "delta_vs_base_lead_adverse10_pct": 32.168604,
+      "worst_month_pct": 0.36548,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.702918,
+      "selected_delay_counts": {
+        "D5": 55,
+        "none": 6,
+        "pullback": 7
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 19,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 40,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 13.05121,
+        "2025-07": 10.837898,
+        "2025-08": 18.596793,
+        "2025-09": 12.288871,
+        "2025-10": 0.36548
+      }
+    },
+    {
+      "policy_id": "artifact_model_fixed_d0",
+      "calendar_sum_pct": 56.342405,
+      "delta_vs_current_qband_lead_pct": -4.728512,
+      "delta_vs_base_lead_adverse10_pct": 33.370757,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.754482,
+      "selected_delay_counts": {
+        "D0": 62,
+        "none": 6
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 20,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 39,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 11.423186,
+        "2025-07": 10.12909,
+        "2025-08": 18.337577,
+        "2025-09": 13.135583,
+        "2025-10": 3.316968
+      }
+    },
+    {
+      "policy_id": "artifact_model_fast_d0_slow_pullback",
+      "calendar_sum_pct": 57.982349,
+      "delta_vs_current_qband_lead_pct": -3.088568,
+      "delta_vs_base_lead_adverse10_pct": 35.010701,
+      "worst_month_pct": 3.316968,
+      "negative_months": 0,
+      "trade_count": 62,
+      "untraded_count": 6,
+      "avg_submitted_quantity": 0.341721,
+      "max_drawdown_pct": -2.754482,
+      "selected_delay_counts": {
+        "D0": 59,
+        "none": 6,
+        "pullback": 3
+      },
+      "exit_reason_counts": {
+        "BreakevenSL": 18,
+        "InitialSL": 2,
+        "MaxHoldExit": 1,
+        "TrailingSL": 41,
+        "Untraded": 6
+      },
+      "by_month": {
+        "2025-06": 12.73727,
+        "2025-07": 10.61043,
+        "2025-08": 18.337577,
+        "2025-09": 12.980103,
+        "2025-10": 3.316968
+      }
+    }
+  ]
+}

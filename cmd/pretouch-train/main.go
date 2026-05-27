@@ -14,6 +14,7 @@ import (
 func main() {
 	config := service.DefaultPretouchTrainerConfig()
 	flag.StringVar(&config.EventsCSVPath, "events-csv", config.EventsCSVPath, "path to pretouch event CSV")
+	flag.StringVar(&config.TimingLabelsCSVPath, "timing-labels-csv", config.TimingLabelsCSVPath, "optional path to research timing labels CSV")
 	flag.StringVar(&config.ModelOutPath, "out", config.ModelOutPath, "path to write model JSON")
 	flag.StringVar(&config.ForwardStart, "forward-start", config.ForwardStart, "forward validation start date, YYYY-MM-DD")
 	flag.Float64Var(&config.TrainRatio, "train-ratio", config.TrainRatio, "chronological train split ratio")
@@ -24,6 +25,7 @@ func main() {
 
 	fmt.Printf("=== Pretouch Model Training ===\n")
 	fmt.Printf("Events CSV: %s\n", config.EventsCSVPath)
+	fmt.Printf("Timing labels CSV: %s\n", config.TimingLabelsCSVPath)
 	fmt.Printf("Model output: %s\n", config.ModelOutPath)
 	fmt.Printf("Forward start: %s\n", config.ForwardStart)
 	fmt.Printf("Train ratio: %.2f\n", config.TrainRatio)

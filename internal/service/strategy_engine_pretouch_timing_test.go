@@ -163,6 +163,122 @@ func TestPretouchTimingEngineAddsRiskOnShadowMetadataWithoutChangingIntentQuanti
 	}
 }
 
+func TestPretouchTimingEngineArmsSlowPullbackDelayForSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("slow", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+
+	first, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	}
+	if first.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", first)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "pretouch_delay_policy_armed" {
+		t.Fatalf("expected slow event to arm delay policy, got %#v", decision)
+	}
+	if got := stringValue(decision.Metadata["selectedDelay"]); got != "pullback" {
+		t.Fatalf("expected selectedDelay=pullback, got %s in %#v", got, decision.Metadata)
+	}
+	policy := mapValue(decision.Metadata["pretouchDelayPolicy"])
+	if got := stringValue(policy["status"]); got != "armed" {
+		t.Fatalf("expected armed policy status, got %s in %#v", got, policy)
+	}
+	if got := parseFloatValue(policy["pullbackTargetATR"]); math.Abs(got-0.05) > 1e-9 {
+		t.Fatalf("expected 0.05 ATR pullback target, got %v in %#v", got, policy)
+	}
+	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
+		t.Fatalf("expected no live intent while slow delay is armed, got %#v", intent)
+	}
+}
+
+func TestPretouchTimingEngineExecutesSlowPullbackAfterTrigger(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("slow", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, true)
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	if decision, err := engine.EvaluateSignal(ctx); err != nil || decision.Action != "wait" {
+		t.Fatalf("expected delay policy to arm, decision=%#v err=%v", decision, err)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(65*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("reference tick evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "pretouch_delay_policy_waiting_pullback" {
+		t.Fatalf("expected pullback watch after reference tick, got %#v", decision)
+	}
+	policy := mapValue(decision.Metadata["pretouchDelayPolicy"])
+	targetPrice := parseFloatValue(policy["targetPrice"])
+	if targetPrice <= 0 || targetPrice >= 105.1 {
+		t.Fatalf("expected long pullback target below reference price, got %#v", policy)
+	}
+
+	ctx = testPretouchSignalContext(start.Add(66*time.Second), targetPrice-0.01)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, targetPrice-0.02, targetPrice-0.01)
+	decision, err = engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("trigger tick evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected advance-plan after pullback trigger, got %#v", decision)
+	}
+	policy = mapValue(decision.Metadata["pretouchDelayPolicy"])
+	if got := stringValue(policy["status"]); got != "triggered" {
+		t.Fatalf("expected triggered policy status, got %s in %#v", got, policy)
+	}
+	if got := stringValue(decision.Metadata["selectedDelay"]); got != "pullback" {
+		t.Fatalf("expected selectedDelay=pullback, got %s in %#v", got, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["marketPrice"]); math.Abs(got-(targetPrice-0.01)) > 1e-9 {
+		t.Fatalf("expected delayed market price, got %v", got)
+	}
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil {
+		t.Fatalf("expected live intent after pullback trigger")
+	}
+	if intent.SignalKind != "entry" {
+		t.Fatalf("expected entry intent, got %#v", intent)
+	}
+}
+
+func TestPretouchTimingEngineKeepsSlowImmediateOutsideSandboxShadow(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("slow", 0.75)
+	ctx := testPretouchSignalContext(start, 101)
+	enablePretouchRiskOnShadow(&ctx, false)
+	_, _ = engine.EvaluateSignal(ctx)
+
+	ctx = testPretouchSignalContext(start.Add(60*time.Second), 105.1)
+	enablePretouchRiskOnShadow(&ctx, false)
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected non-sandbox slow event to keep immediate behavior, got %#v", decision)
+	}
+	if mapValue(decision.Metadata["pretouchDelayPolicy"]) != nil {
+		t.Fatalf("expected no delay policy outside sandbox shadow, got %#v", decision.Metadata)
+	}
+}
+
 func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)

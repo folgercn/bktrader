@@ -77,6 +77,8 @@ type Config struct {
 	PretouchT3RetrainEnabled        bool   // T3 overlay 模型重训
 	PretouchModelPath               string // lead/T2 模型 artifact 路径
 	PretouchLeadRetrainEventsCSV    string // lead/T2 重训事件 CSV
+	PretouchLeadTimingLabelsCSV     string // lead/T2 timing label CSV
+	PretouchLeadTimingLabelsMaxAgeH int    // lead/T2 timing label CSV 最大允许年龄（小时）
 	PretouchT3OverlayModelPath      string // T3 overlay 模型 artifact 路径
 	PretouchT3RetrainTradesCSV      string // T3 overlay 重训 paired trades CSV
 
@@ -194,6 +196,8 @@ func Load() Config {
 		PretouchT3RetrainEnabled:            boolFromEnv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_ENABLED", true),
 		PretouchModelPath:                   getenv("BK_PRETOUCH_MODEL_PATH", "data/pretouch_model.json"),
 		PretouchLeadRetrainEventsCSV:        getenv("BK_PRETOUCH_RETRAIN_EVENTS_CSV", "research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv"),
+		PretouchLeadTimingLabelsCSV:         getenv("BK_PRETOUCH_TIMING_LABELS_CSV", "research/entry_redesign/scripts/output/timing_probability_unified/unified_trades.csv"),
+		PretouchLeadTimingLabelsMaxAgeH:     intFromEnv("BK_PRETOUCH_TIMING_LABELS_MAX_AGE_HOURS", 48),
 		PretouchT3OverlayModelPath:          getenv("BK_PRETOUCH_T3_OVERLAY_MODEL_PATH", "data/pretouch_t3_overlay_rf_model.json"),
 		PretouchT3RetrainTradesCSV:          getenv("BK_PRETOUCH_T3_OVERLAY_RETRAIN_TRADES_CSV", "research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_rf_cost_sizing_20260520/t3_overlay_rf_cost_base_trades.csv"),
 		SupervisorTargets:                   stringSliceFromEnv("SUPERVISOR_TARGETS", nil),

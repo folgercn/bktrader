@@ -14,25 +14,27 @@ import (
 
 // PretouchTrainerConfig holds training configuration.
 type PretouchTrainerConfig struct {
-	EventsCSVPath string // path to canonical events CSV
-	ModelOutPath  string // output path for model JSON
-	ForwardStart  string // "2025-11-01"
-	TrainRatio    float64
-	MaxDepthDT    int // 3
-	NEstimatorsRF int // 200
-	RandomSeed    int64
+	EventsCSVPath       string // path to canonical events CSV
+	TimingLabelsCSVPath string // optional research ledger with event_id/timing_prediction/speed_gate_pass
+	ModelOutPath        string // output path for model JSON
+	ForwardStart        string // "2025-11-01"
+	TrainRatio          float64
+	MaxDepthDT          int // 3
+	NEstimatorsRF       int // 200
+	RandomSeed          int64
 }
 
 // DefaultPretouchTrainerConfig returns the default training config.
 func DefaultPretouchTrainerConfig() PretouchTrainerConfig {
 	return PretouchTrainerConfig{
-		EventsCSVPath: "research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv",
-		ModelOutPath:  "data/pretouch_model.json",
-		ForwardStart:  "2025-11-01",
-		TrainRatio:    0.6,
-		MaxDepthDT:    3,
-		NEstimatorsRF: 200,
-		RandomSeed:    42,
+		EventsCSVPath:       "research/tick_flow_event_sources/20260514_pretouch_full_window/feature_filtered_seed_events/robust_quality/pretouch_small_pullback_rf_q50_speed300_ge_q10_touch30m_eff300le1.csv",
+		TimingLabelsCSVPath: "research/entry_redesign/scripts/output/timing_probability_unified/unified_trades.csv",
+		ModelOutPath:        "data/pretouch_model.json",
+		ForwardStart:        "2025-11-01",
+		TrainRatio:          1.0,
+		MaxDepthDT:          3,
+		NEstimatorsRF:       200,
+		RandomSeed:          42,
 	}
 }
 
@@ -114,9 +116,14 @@ func TrainPretouchModel(config PretouchTrainerConfig) error {
 	trainRows := fullWindowRows[:splitIdx]
 	testRows := fullWindowRows[splitIdx:]
 
+	labelOverrides, err := loadPretouchTimingLabelOverrides(config.TimingLabelsCSVPath)
+	if err != nil {
+		return fmt.Errorf("load timing labels: %w", err)
+	}
+
 	// Extract features and labels
-	trainX, trainTimingY, trainRFY, trainMedians := extractTrainingData(trainRows, colIdx, pretouchTrainFeatures)
-	testX, _, testRFY, _ := extractTrainingData(testRows, colIdx, pretouchTrainFeatures)
+	trainX, trainTimingY, trainRFY, trainMedians := extractTrainingData(trainRows, colIdx, pretouchTrainFeatures, labelOverrides)
+	testX, _, testRFY, _ := extractTrainingData(testRows, colIdx, pretouchTrainFeatures, labelOverrides)
 
 	// Impute test with train medians
 	for i := range testX {
@@ -144,14 +151,16 @@ func TrainPretouchModel(config PretouchTrainerConfig) error {
 
 	// Build model bundle
 	bundle := &PretouchModelBundle{
-		TimingTree:   timingTree,
-		RFModel:      rfModel,
-		FeatureNames: pretouchTrainFeatures,
-		Medians:      trainMedians,
-		Version:      time.Now().UTC().Format("20060102") + "_v1",
-		TrainedAt:    time.Now().UTC().Format(time.RFC3339),
-		TimingLOOCV:  loocvAccuracy,
-		RFAccuracy:   rfAccuracy,
+		TimingTree:     timingTree,
+		RFModel:        rfModel,
+		FeatureNames:   pretouchTrainFeatures,
+		Medians:        trainMedians,
+		Version:        time.Now().UTC().Format("20060102") + "_v1",
+		TrainedAt:      time.Now().UTC().Format(time.RFC3339),
+		TimingLOOCV:    loocvAccuracy,
+		RFAccuracy:     rfAccuracy,
+		ArtifactKind:   "pretouch_lead_timing_slow_aware",
+		TrainingSource: config.EventsCSVPath,
 	}
 
 	// Save
@@ -173,7 +182,91 @@ func loadCSV(path string) ([][]string, error) {
 	return reader.ReadAll()
 }
 
-func extractTrainingData(rows [][]string, colIdx map[string]int, featureNames []string) ([][]float64, []string, []string, []float64) {
+type pretouchTimingLabelOverride struct {
+	TimingLabel string
+	RFLabel     string
+}
+
+func loadPretouchTimingLabelOverrides(path string) (map[string]pretouchTimingLabelOverride, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	records, err := loadCSV(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(records) < 2 {
+		return nil, nil
+	}
+	header := records[0]
+	colIdx := make(map[string]int, len(header))
+	for i, col := range header {
+		colIdx[col] = i
+	}
+	eventIDIdx, ok := colIdx["event_id"]
+	if !ok {
+		return nil, fmt.Errorf("timing label CSV missing event_id")
+	}
+	timingIdx, ok := colIdx["timing_prediction"]
+	if !ok {
+		return nil, fmt.Errorf("timing label CSV missing timing_prediction")
+	}
+	speedGateIdx, hasSpeedGate := colIdx["speed_gate_pass"]
+	delayPnlIdx, hasDelayPnl := colIdx["delay_pnl_pct"]
+	out := make(map[string]pretouchTimingLabelOverride, len(records)-1)
+	for _, row := range records[1:] {
+		if eventIDIdx >= len(row) || timingIdx >= len(row) {
+			continue
+		}
+		eventID := strings.TrimSpace(row[eventIDIdx])
+		if eventID == "" {
+			continue
+		}
+		label := normalizePretouchTrainingTimingLabel(row[timingIdx])
+		if hasSpeedGate && speedGateIdx < len(row) && !parseCSVBool(row[speedGateIdx]) {
+			label = "skip"
+		}
+		if label == "" {
+			continue
+		}
+		rfLabel := "0"
+		if label != "skip" && hasDelayPnl && delayPnlIdx < len(row) {
+			pnl, _ := strconv.ParseFloat(strings.TrimSpace(row[delayPnlIdx]), 64)
+			if pnl > 0 {
+				rfLabel = "1"
+			}
+		}
+		out[eventID] = pretouchTimingLabelOverride{
+			TimingLabel: label,
+			RFLabel:     rfLabel,
+		}
+	}
+	return out, nil
+}
+
+func normalizePretouchTrainingTimingLabel(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "fast", "slow", "skip":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func parseCSVBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1", "yes", "y":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractTrainingData(rows [][]string, colIdx map[string]int, featureNames []string, labelOverrides map[string]pretouchTimingLabelOverride) ([][]float64, []string, []string, []float64) {
 	X := make([][]float64, len(rows))
 	timingY := make([]string, len(rows))
 	rfY := make([]string, len(rows))
@@ -186,6 +279,7 @@ func extractTrainingData(rows [][]string, colIdx map[string]int, featureNames []
 
 	execReturnIdx, hasExecReturn := colIdx["execution_return_pct"]
 	execWinIdx, hasExecWin := colIdx["execution_win"]
+	eventIDIdx, hasEventID := colIdx["event_id"]
 
 	for i, row := range rows {
 		features := make([]float64, len(featureNames))
@@ -205,8 +299,16 @@ func extractTrainingData(rows [][]string, colIdx map[string]int, featureNames []
 		}
 		X[i] = features
 
-		// Timing label: simplified — use execution_return_pct
-		// positive → "fast", negative → "skip"
+		if hasEventID && eventIDIdx < len(row) {
+			if override, ok := labelOverrides[strings.TrimSpace(row[eventIDIdx])]; ok {
+				timingY[i] = override.TimingLabel
+				rfY[i] = override.RFLabel
+				continue
+			}
+		}
+
+		// Fallback timing label for rows outside the research ledger:
+		// positive → "fast", negative → "skip".
 		if hasExecReturn {
 			ret, err := strconv.ParseFloat(row[execReturnIdx], 64)
 			if err != nil || ret < 0 {

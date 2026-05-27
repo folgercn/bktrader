@@ -228,16 +228,18 @@ func StartRuntimeComponents(ctx context.Context, platform *service.Platform, cfg
 
 func pretouchModelSchedulerConfigForConfig(cfg config.Config) service.PretouchModelSchedulerConfig {
 	return service.PretouchModelSchedulerConfig{
-		HotReloadEnabled:       cfg.PretouchModelHotReloadEnabled,
-		ReloadInterval:         time.Duration(cfg.PretouchModelReloadIntervalSec) * time.Second,
-		RetrainEnabled:         cfg.PretouchModelRetrainEnabled,
-		RetrainInterval:        time.Duration(cfg.PretouchModelRetrainIntervalSec) * time.Second,
-		LeadRetrainEnabled:     cfg.PretouchLeadRetrainEnabled,
-		T3RetrainEnabled:       cfg.PretouchT3RetrainEnabled,
-		LeadModelPath:          cfg.PretouchModelPath,
-		LeadEventsCSVPath:      cfg.PretouchLeadRetrainEventsCSV,
-		T3OverlayModelPath:     cfg.PretouchT3OverlayModelPath,
-		T3OverlayTradesCSVPath: cfg.PretouchT3RetrainTradesCSV,
+		HotReloadEnabled:        cfg.PretouchModelHotReloadEnabled,
+		ReloadInterval:          time.Duration(cfg.PretouchModelReloadIntervalSec) * time.Second,
+		RetrainEnabled:          cfg.PretouchModelRetrainEnabled,
+		RetrainInterval:         time.Duration(cfg.PretouchModelRetrainIntervalSec) * time.Second,
+		LeadRetrainEnabled:      cfg.PretouchLeadRetrainEnabled,
+		T3RetrainEnabled:        cfg.PretouchT3RetrainEnabled,
+		LeadModelPath:           cfg.PretouchModelPath,
+		LeadEventsCSVPath:       cfg.PretouchLeadRetrainEventsCSV,
+		LeadTimingLabelsCSVPath: cfg.PretouchLeadTimingLabelsCSV,
+		LeadTimingLabelsMaxAge:  time.Duration(cfg.PretouchLeadTimingLabelsMaxAgeH) * time.Hour,
+		T3OverlayModelPath:      cfg.PretouchT3OverlayModelPath,
+		T3OverlayTradesCSVPath:  cfg.PretouchT3RetrainTradesCSV,
 	}
 }
 

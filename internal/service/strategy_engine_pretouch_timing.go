@@ -87,6 +87,22 @@ type bkLiveEthPretouchTimingEngine struct {
 
 	t3MissLogMu  sync.Mutex
 	t3MissLogKey string
+
+	leadDelayMu      sync.Mutex
+	leadDelayPending *pretouchLeadDelayPending
+}
+
+type pretouchLeadDelayPending struct {
+	Event          domain.PretouchEvent
+	ModelVersion   string
+	SignalBarKey   string
+	SelectedDelay  string
+	ArmedAt        time.Time
+	ReadyAt        time.Time
+	ExpiresAt      time.Time
+	TargetATR      float64
+	ReferencePrice float64
+	TargetPrice    float64
 }
 
 func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimingEngine {
@@ -227,6 +243,10 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		BestAsk: orderBookStats.bestAsk,
 	}
 
+	if decision, handled := e.evaluatePretouchLeadDelayPending(ctx, tick, closedBars, currentBar, orderBookStats); handled {
+		return decision, nil
+	}
+
 	// Process tick through detector
 	result := e.detector.OnTick(tick)
 
@@ -310,24 +330,181 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		}, nil
 	}
 
-	// Compute final position size multiplier and live quantity.
-	finalMultiplier := sizingMultiplier * result.Event.CostPenalty
+	if e.shouldArmPretouchLeadDelay(ctx, result.Event, timingRegime) {
+		return e.armPretouchLeadDelay(ctx, result.Event, leadModel.Version, currentBar), nil
+	}
+
+	return e.buildPretouchLeadAdvanceDecision(ctx, result.Event, leadModel.Version, closedBars, currentBar, orderBookStats, triggerPrice, nil), nil
+}
+
+func (e *bkLiveEthPretouchTimingEngine) shouldArmPretouchLeadDelay(ctx StrategySignalEvaluationContext, event domain.PretouchEvent, timingRegime string) bool {
+	if e == nil || !strings.EqualFold(timingRegime, "slow") {
+		return false
+	}
+	if !strings.EqualFold(stringValue(ctx.ExecutionContext.Parameters["pretouchShadowMode"]), pretouchShadowModeTestnetCollect) {
+		return false
+	}
+	submitContext := pretouchShadowSubmitContextFromEvaluation(ctx)
+	return submitContext.liveExecution && submitContext.sandbox && strings.EqualFold(submitContext.executionMode, "rest")
+}
+
+func (e *bkLiveEthPretouchTimingEngine) armPretouchLeadDelay(ctx StrategySignalEvaluationContext, event domain.PretouchEvent, modelVersion string, currentBar *HourlyBar) StrategySignalDecision {
+	pending := pretouchLeadDelayPending{
+		Event:         event,
+		ModelVersion:  modelVersion,
+		SignalBarKey:  pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar),
+		SelectedDelay: "pullback",
+		ArmedAt:       ctx.EventTime,
+		ReadyAt:       event.TouchTime.Add(5 * time.Second),
+		ExpiresAt:     event.TouchTime.Add(65 * time.Second),
+		TargetATR:     0.05,
+	}
+	e.leadDelayMu.Lock()
+	e.leadDelayPending = &pending
+	e.leadDelayMu.Unlock()
+
+	return StrategySignalDecision{
+		Action: "wait",
+		Reason: "pretouch_delay_policy_armed",
+		Metadata: map[string]any{
+			"pretouchEvent":       event,
+			"timingRegime":        event.TimingRegime,
+			"rfProbability":       event.RFProbability,
+			"modelVersion":        modelVersion,
+			"selectedDelay":       pending.SelectedDelay,
+			"pretouchDelayPolicy": pending.metadata("armed"),
+			"signalSource":        "pretouch-timing-unified",
+			"decisionState":       "waiting",
+			"signalKind":          "entry-delay-watch",
+		},
+	}
+}
+
+func (e *bkLiveEthPretouchTimingEngine) evaluatePretouchLeadDelayPending(ctx StrategySignalEvaluationContext, tick TickData, closedBars []HourlyBar, currentBar *HourlyBar, orderBookStats orderBookDecisionStats) (StrategySignalDecision, bool) {
+	if e == nil {
+		return StrategySignalDecision{}, false
+	}
+	signalBarKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
+	e.leadDelayMu.Lock()
+	pending := e.leadDelayPending
+	if pending == nil {
+		e.leadDelayMu.Unlock()
+		return StrategySignalDecision{}, false
+	}
+	if pending.SignalBarKey != "" && signalBarKey != "" && pending.SignalBarKey != signalBarKey {
+		e.leadDelayPending = nil
+		e.leadDelayMu.Unlock()
+		return StrategySignalDecision{}, false
+	}
+	if tick.Time.Before(pending.ReadyAt) {
+		meta := map[string]any{
+			"pretouchEvent":       pending.Event,
+			"timingRegime":        pending.Event.TimingRegime,
+			"rfProbability":       pending.Event.RFProbability,
+			"modelVersion":        pending.ModelVersion,
+			"selectedDelay":       pending.SelectedDelay,
+			"pretouchDelayPolicy": pending.metadata("waiting"),
+			"signalSource":        "pretouch-timing-unified",
+			"decisionState":       "waiting",
+			"signalKind":          "entry-delay-watch",
+		}
+		e.leadDelayMu.Unlock()
+		return StrategySignalDecision{Action: "wait", Reason: "pretouch_delay_policy_waiting", Metadata: meta}, true
+	}
+	if pending.ReferencePrice <= 0 {
+		pending.ReferencePrice = tick.Price
+		pullbackAmount := pending.TargetATR * pending.Event.ATR
+		if strings.EqualFold(pending.Event.Side, "short") {
+			pending.TargetPrice = pending.ReferencePrice + pullbackAmount
+		} else {
+			pending.TargetPrice = pending.ReferencePrice - pullbackAmount
+		}
+	}
+	triggered := pending.pullbackTriggered(tick.Price)
+	timedOut := !tick.Time.Before(pending.ExpiresAt)
+	status := "waiting"
+	if triggered {
+		status = "triggered"
+	}
+	if timedOut && !triggered {
+		status = "timeout_fallback"
+	}
+	if !triggered && !timedOut {
+		meta := map[string]any{
+			"pretouchEvent":       pending.Event,
+			"timingRegime":        pending.Event.TimingRegime,
+			"rfProbability":       pending.Event.RFProbability,
+			"modelVersion":        pending.ModelVersion,
+			"selectedDelay":       pending.SelectedDelay,
+			"pretouchDelayPolicy": pending.metadata(status),
+			"signalSource":        "pretouch-timing-unified",
+			"decisionState":       "waiting",
+			"signalKind":          "entry-delay-watch",
+			"marketPrice":         tick.Price,
+			"marketSource":        "trade_tick.price",
+		}
+		e.leadDelayMu.Unlock()
+		return StrategySignalDecision{Action: "wait", Reason: "pretouch_delay_policy_waiting_pullback", Metadata: meta}, true
+	}
+	pendingCopy := *pending
+	e.leadDelayPending = nil
+	e.leadDelayMu.Unlock()
+
+	delayMetadata := pendingCopy.metadata(status)
+	return e.buildPretouchLeadAdvanceDecision(ctx, pendingCopy.Event, pendingCopy.ModelVersion, closedBars, currentBar, orderBookStats, tick.Price, delayMetadata), true
+}
+
+func (p pretouchLeadDelayPending) pullbackTriggered(price float64) bool {
+	if price <= 0 || p.TargetPrice <= 0 {
+		return false
+	}
+	if strings.EqualFold(p.Event.Side, "short") {
+		return price >= p.TargetPrice
+	}
+	return price <= p.TargetPrice
+}
+
+func (p pretouchLeadDelayPending) metadata(status string) map[string]any {
+	return map[string]any{
+		"name":                   "slow_pullback_delay_policy",
+		"policySource":           "research_lead_selected_delay",
+		"status":                 status,
+		"selectedDelay":          p.SelectedDelay,
+		"armedAt":                formatOptionalRFC3339(p.ArmedAt),
+		"readyAt":                formatOptionalRFC3339(p.ReadyAt),
+		"expiresAt":              formatOptionalRFC3339(p.ExpiresAt),
+		"pullbackStartOffsetSec": 5.0,
+		"pullbackWindowSeconds":  60.0,
+		"pullbackTargetATR":      p.TargetATR,
+		"referencePrice":         p.ReferencePrice,
+		"targetPrice":            p.TargetPrice,
+		"signalBarStateKey":      p.SignalBarKey,
+		"eventId":                p.Event.EventID,
+	}
+}
+
+func (e *bkLiveEthPretouchTimingEngine) buildPretouchLeadAdvanceDecision(ctx StrategySignalEvaluationContext, event domain.PretouchEvent, modelVersion string, closedBars []HourlyBar, currentBar *HourlyBar, orderBookStats orderBookDecisionStats, marketPrice float64, delayMetadata map[string]any) StrategySignalDecision {
+	timingRegime := normalizePretouchTimingRegime(event.TimingRegime)
+	rfProb := event.RFProbability
+	sizingMultiplier := event.SizingMultiplier
+	config := pretouchConfigFromParameters(e.config, ctx.ExecutionContext.Parameters)
+	finalMultiplier := sizingMultiplier * event.CostPenalty
 	finalPositionSize := config.BaseShare * finalMultiplier
-	result.Event.FinalPositionSize = finalPositionSize
+	event.FinalPositionSize = finalPositionSize
 	baseQuantity := pretouchBaseOrderQuantityFromParameters(ctx.ExecutionContext.Parameters)
 	if baseQuantity <= 0 {
 		return StrategySignalDecision{
 			Action: "wait",
 			Reason: "no_base_quantity",
 			Metadata: map[string]any{
-				"pretouchEvent": result.Event.EventID,
+				"pretouchEvent": event.EventID,
 				"timingRegime":  timingRegime,
 				"rfProbability": rfProb,
-				"modelVersion":  leadModel.Version,
+				"modelVersion":  modelVersion,
 			},
-		}, nil
+		}
 	}
-	nextSide := nextPretouchSide(result.Event.Side)
+	nextSide := nextPretouchSide(event.Side)
 	productionSuggestedQuantity := pretouchCapSubmittedQuantity(ctx.ExecutionContext.Parameters, baseQuantity*finalPositionSize)
 	shadowSizing := pretouchShadowSizingFromParameters(
 		ctx.ExecutionContext.Parameters,
@@ -336,7 +513,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		orderBookStats,
 		pretouchShadowSubmitContextFromEvaluation(ctx),
 	)
-	t2StaticDownsize := pretouchT2StaticDownsizeCandidateFromEvent(ctx.ExecutionContext.Parameters, result.Event, closedBars, rfProb)
+	t2StaticDownsize := pretouchT2StaticDownsizeCandidateFromEvent(ctx.ExecutionContext.Parameters, event, closedBars, rfProb)
 	if shadowSizing != nil && t2StaticDownsize != nil {
 		pretouchApplyT2StaticDownsizeShadow(shadowSizing, t2StaticDownsize)
 	}
@@ -347,18 +524,20 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		}
 	}
 
-	logger.Info("pretouch signal: advance-plan",
-		"event_id", result.Event.EventID,
-		"side", result.Event.Side,
+	e.platform.logger("service.pretouch_timing",
+		"symbol", ctx.ExecutionContext.Symbol,
+	).Info("pretouch signal: advance-plan",
+		"event_id", event.EventID,
+		"side", event.Side,
 		"timing_regime", timingRegime,
 		"rf_probability", rfProb,
 		"sizing_multiplier", sizingMultiplier,
-		"cost_penalty", result.Event.CostPenalty,
+		"cost_penalty", event.CostPenalty,
 		"final_position_size", finalPositionSize,
 		"production_suggested_quantity", productionSuggestedQuantity,
 		"suggested_quantity", suggestedQuantity,
 		"shadow_risk_on_quantity_enabled", boolValue(mapValue(shadowSizing)["submittedRiskOnQuantityEnabled"]),
-		"model_version", leadModel.Version,
+		"model_version", modelVersion,
 	)
 
 	currentSnapshot := pretouchBarSnapshot(currentBar)
@@ -372,7 +551,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		"shortReady":                          nextSide == "SELL",
 		"longBreakoutPatternReady":            nextSide == "BUY",
 		"shortBreakoutPatternReady":           nextSide == "SELL",
-		"breakoutPrice":                       result.Event.TouchPrice,
+		"breakoutPrice":                       event.TouchPrice,
 		"breakoutPriceSource":                 "pretouch.touch_price",
 		"timeframe":                           "1h",
 		"current":                             currentSnapshot,
@@ -389,28 +568,31 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	if t2StaticDownsize != nil {
 		signalBarDecision["t2StaticDownsizeCandidate"] = cloneMetadata(t2StaticDownsize)
 	}
+	if delayMetadata != nil {
+		signalBarDecision["pretouchDelayPolicy"] = cloneMetadata(delayMetadata)
+	}
 	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 
 	metadata := map[string]any{
-		"pretouchEvent":                 result.Event,
+		"pretouchEvent":                 event,
 		"timingRegime":                  timingRegime,
 		"rfProbability":                 rfProb,
 		"sizingMultiplier":              sizingMultiplier,
-		"costPenalty":                   result.Event.CostPenalty,
+		"costPenalty":                   event.CostPenalty,
 		"finalPositionSize":             finalPositionSize,
 		"productionSuggestedQuantity":   productionSuggestedQuantity,
 		"suggestedQuantity":             suggestedQuantity,
-		"modelVersion":                  leadModel.Version,
+		"modelVersion":                  modelVersion,
 		"signalSource":                  "pretouch-timing-unified",
 		"signalBarDecision":             signalBarDecision,
 		"signalBarStateKey":             signalBarTradeLimitKey,
 		liveSignalBarTradeLimitKeyField: signalBarTradeLimitKey,
-		"nextPlannedEvent":              formatOptionalRFC3339(result.Event.TouchTime),
-		"nextPlannedPrice":              result.Event.TouchPrice,
+		"nextPlannedEvent":              formatOptionalRFC3339(event.TouchTime),
+		"nextPlannedPrice":              event.TouchPrice,
 		"nextPlannedSide":               nextSide,
 		"nextPlannedRole":               "entry",
 		"nextPlannedReason":             "Pretouch-Timing",
-		"marketPrice":                   triggerPrice,
+		"marketPrice":                   marketPrice,
 		"marketSource":                  "trade_tick.price",
 		"signalKind":                    "entry",
 		"decisionState":                 "ready",
@@ -429,13 +611,16 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	if t2StaticDownsize != nil {
 		metadata["t2StaticDownsizeCandidate"] = t2StaticDownsize
 	}
+	if delayMetadata != nil {
+		metadata["pretouchDelayPolicy"] = delayMetadata
+		metadata["selectedDelay"] = stringValue(delayMetadata["selectedDelay"])
+	}
 
-	// Produce signal decision
 	return StrategySignalDecision{
 		Action:   "advance-plan",
-		Reason:   fmt.Sprintf("pretouch_%s_%s", timingRegime, result.Event.Side),
+		Reason:   fmt.Sprintf("pretouch_%s_%s", timingRegime, event.Side),
 		Metadata: metadata,
-	}, nil
+	}
 }
 
 func nextPretouchSide(eventSide string) string {
