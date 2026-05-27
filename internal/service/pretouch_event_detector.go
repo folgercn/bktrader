@@ -241,6 +241,7 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 	// Check if tick touches a level
 	var side string
 	var level float64
+	var touchPrice float64
 
 	longReady := pretouchLongStructureReady(prevBar2.High, prevBar1.High, d.config.StructureToleranceBps)
 	shortReady := pretouchShortStructureReady(prevBar2.Low, prevBar1.Low, d.config.StructureToleranceBps)
@@ -249,10 +250,20 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 		// Long breakout: current tick touches prev_high_2 for first time
 		side = "long"
 		level = longLevel
+		touchPrice = tick.Price
+	} else if d.currentBar.High >= longLevel && longReady {
+		side = "long"
+		level = longLevel
+		touchPrice = d.currentBar.High
 	} else if tick.Price <= shortLevel && shortReady {
 		// Short breakout: current tick touches prev_low_2 for first time
 		side = "short"
 		level = shortLevel
+		touchPrice = tick.Price
+	} else if d.currentBar.Low <= shortLevel && shortReady {
+		side = "short"
+		level = shortLevel
+		touchPrice = d.currentBar.Low
 	} else {
 		return PretouchDetectionResult{Reason: "no_level_touch"}
 	}
@@ -260,7 +271,6 @@ func (d *PretouchEventDetector) OnTick(tick TickData) PretouchDetectionResult {
 	// --- Compute pretouch features ---
 
 	touchTime := tick.Time
-	touchPrice := tick.Price
 	signalBarStart := d.currentBar.OpenTime
 
 	// pre_touch_seconds

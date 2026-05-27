@@ -81,6 +81,52 @@ func TestPretouchEventDetectorAllowsNearEqualLongBreakoutWithinTolerance(t *test
 	}
 }
 
+func TestPretouchEventDetectorDetectsLeadIntrabarExtremeTouch(t *testing.T) {
+	start := time.Date(2026, 5, 27, 6, 0, 0, 0, time.UTC)
+	config := DefaultPretouchDetectorConfig()
+	config.MinSpeed300sATR = 0
+	detector := NewPretouchEventDetector("ETHUSDT", config)
+	closedBars := pretouchDetectorClosedBars(start)
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     100,
+		High:     100,
+		Low:      100,
+		Close:    100,
+	})
+
+	first := detector.OnTick(TickData{Time: start.Add(10 * time.Second), Price: 100})
+	if first.Detected {
+		t.Fatalf("first non-touch tick should not detect: %#v", first)
+	}
+
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     100,
+		High:     105.2,
+		Low:      99.5,
+		Close:    103.5,
+	})
+	result := detector.OnTick(TickData{Time: start.Add(60 * time.Second), Price: 103.5})
+	if !result.Detected {
+		t.Fatalf("expected lead detection from current bar high, got reason=%s", result.Reason)
+	}
+	if result.Event.Side != "long" {
+		t.Fatalf("expected long lead event, got %s", result.Event.Side)
+	}
+	if result.Event.Level != 105 {
+		t.Fatalf("expected T2 level 105, got %v", result.Event.Level)
+	}
+	if result.Event.TouchPrice != 105.2 {
+		t.Fatalf("expected current bar high as touch price, got %v", result.Event.TouchPrice)
+	}
+
+	again := detector.OnTick(TickData{Time: start.Add(90 * time.Second), Price: 106})
+	if again.Detected || again.Reason != "already_touched_this_bar" {
+		t.Fatalf("expected same-bar lead dedupe, got detected=%v reason=%s", again.Detected, again.Reason)
+	}
+}
+
 func TestPretouchEventDetectorSyncBarsSortsClosedHistory(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	bars := pretouchDetectorClosedBars(start)
