@@ -688,6 +688,45 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	}
 }
 
+func TestPretouchTimingEngineSubmitsT3OverlayFromSignalBarHighTouch(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+
+	if decision, err := engine.EvaluateSignal(ctx); err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	} else if decision.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", decision)
+	}
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 103.5)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, 103.49, 103.50)
+	bars := ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
+	current := bars[len(bars)-1].(map[string]any)
+	current["high"] = 106.2
+	current["close"] = 103.5
+
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected T3 overlay advance-plan from signal bar high touch, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	event, ok := decision.Metadata["pretouchEvent"].(domain.PretouchEvent)
+	if !ok {
+		t.Fatalf("expected pretouchEvent metadata, got %#v", decision.Metadata["pretouchEvent"])
+	}
+	if event.Side != "long" || event.Level != 106 {
+		t.Fatalf("expected long T3 event at level 106, got %#v", event)
+	}
+	if event.TouchPrice != 106.2 {
+		t.Fatalf("expected signal bar high as T3 touch price, got %v", event.TouchPrice)
+	}
+}
+
 func TestPretouchT3DeterministicStopGateSelectsHardStopProfile(t *testing.T) {
 	event := domain.PretouchEvent{
 		EventID:           "ETHUSDT_t3_20260515_120500_long",
