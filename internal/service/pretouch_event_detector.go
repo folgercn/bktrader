@@ -390,20 +390,30 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 
 	var side string
 	var level float64
+	var touchPrice float64
 	longReady := pretouchT3LongStructureReady(prevBar3.High, prevBar2.High, prevBar1.High)
 	shortReady := pretouchT3ShortStructureReady(prevBar3.Low, prevBar2.Low, prevBar1.Low)
 	if tick.Price >= prevBar3.High && longReady {
 		side = "long"
 		level = prevBar3.High
+		touchPrice = tick.Price
+	} else if d.currentBar.High >= prevBar3.High && longReady {
+		side = "long"
+		level = prevBar3.High
+		touchPrice = d.currentBar.High
 	} else if tick.Price <= prevBar3.Low && shortReady {
 		side = "short"
 		level = prevBar3.Low
+		touchPrice = tick.Price
+	} else if d.currentBar.Low <= prevBar3.Low && shortReady {
+		side = "short"
+		level = prevBar3.Low
+		touchPrice = d.currentBar.Low
 	} else {
 		return PretouchDetectionResult{Reason: "t3_no_level_touch"}
 	}
 
 	touchTime := tick.Time
-	touchPrice := tick.Price
 	signalBarStart := d.currentBar.OpenTime
 	diagnostics := map[string]any{
 		"shape":                  "t3_swing",

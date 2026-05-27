@@ -108,6 +108,59 @@ func TestPretouchEventDetectorSyncBarsSortsClosedHistory(t *testing.T) {
 	}
 }
 
+func TestPretouchEventDetectorT3OverlayDetectsIntrabarExtremeTouch(t *testing.T) {
+	start := time.Date(2026, 5, 27, 6, 0, 0, 0, time.UTC)
+	config := DefaultPretouchDetectorConfig()
+	config.MinSpeed300sATR = 0
+	detector := NewPretouchEventDetector("ETHUSDT", config)
+	closedBars := []HourlyBar{
+		{OpenTime: start.Add(-6 * time.Hour), Open: 100, High: 106, Low: 94, Close: 100},
+		{OpenTime: start.Add(-5 * time.Hour), Open: 100, High: 106, Low: 94, Close: 100},
+		{OpenTime: start.Add(-4 * time.Hour), Open: 100, High: 106, Low: 94, Close: 100},
+		{OpenTime: start.Add(-3 * time.Hour), Open: 100, High: 105, Low: 95, Close: 100},
+		{OpenTime: start.Add(-2 * time.Hour), Open: 100, High: 99, Low: 92, Close: 96},
+		{OpenTime: start.Add(-1 * time.Hour), Open: 96, High: 104, Low: 95, Close: 103},
+	}
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     103,
+		High:     103,
+		Low:      103,
+		Close:    103,
+	})
+
+	first := detector.OnTickT3Overlay(TickData{Time: start.Add(10 * time.Second), Price: 103})
+	if first.Detected {
+		t.Fatalf("first non-touch tick should not detect: %#v", first)
+	}
+
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     103,
+		High:     105.2,
+		Low:      102.5,
+		Close:    103.5,
+	})
+	result := detector.OnTickT3Overlay(TickData{Time: start.Add(60 * time.Second), Price: 103.5})
+	if !result.Detected {
+		t.Fatalf("expected T3 overlay detection from current bar high, got reason=%s diagnostics=%#v", result.Reason, result.Diagnostics)
+	}
+	if result.Event.Side != "long" {
+		t.Fatalf("expected long T3 overlay, got %s", result.Event.Side)
+	}
+	if result.Event.Level != 105 {
+		t.Fatalf("expected T3 level 105, got %v", result.Event.Level)
+	}
+	if result.Event.TouchPrice != 105.2 {
+		t.Fatalf("expected current bar high as touch price, got %v", result.Event.TouchPrice)
+	}
+
+	again := detector.OnTickT3Overlay(TickData{Time: start.Add(90 * time.Second), Price: 106})
+	if again.Detected || again.Reason != "t3_already_touched_this_bar" {
+		t.Fatalf("expected same-bar T3 dedupe, got detected=%v reason=%s", again.Detected, again.Reason)
+	}
+}
+
 func TestPretouchEventDetectorRejectsInsufficientHistory(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	detector := NewPretouchEventDetector("ETHUSDT", DefaultPretouchDetectorConfig())
