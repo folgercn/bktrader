@@ -640,6 +640,13 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	result := e.t3Detector.OnTickT3Overlay(tick)
 	if !result.Detected {
 		e.logT3ShadowOverlayMiss(ctx, tick, leadMissReason, result)
+		if metadata := pretouchT3OverlayRejectMetadata(leadMissReason, result); len(metadata) > 0 {
+			return StrategySignalDecision{
+				Action:   "wait",
+				Reason:   leadMissReason,
+				Metadata: metadata,
+			}, true
+		}
 		return StrategySignalDecision{}, false
 	}
 
@@ -785,8 +792,50 @@ func (e *bkLiveEthPretouchTimingEngine) logT3ShadowOverlayMiss(ctx StrategySigna
 		"t3_miss_category", category,
 		"event_time", formatOptionalRFC3339(ctx.EventTime),
 		"tick_price", tick.Price,
+		"t3_side", stringValue(diagnostics["side"]),
+		"t3_level", parseFloatValue(diagnostics["level"]),
+		"t3_touch_price", parseFloatValue(diagnostics["touchPrice"]),
+		"t3_signal_bar_start", stringValue(diagnostics["signalBarStart"]),
+		"t3_pre_touch_seconds", parseFloatValue(diagnostics["preTouchSeconds"]),
+		"t3_speed_300s_atr", parseFloatValue(diagnostics["speed300sATR"]),
+		"t3_min_abs_speed_300s_atr", parseFloatValue(diagnostics["minAbsSpeed300sATR"]),
+		"t3_eff_300s", parseFloatValue(diagnostics["eff300s"]),
+		"t3_max_eff_300s", parseFloatValue(diagnostics["maxEff300s"]),
+		"t3_touch_extension_atr", parseFloatValue(diagnostics["touchExtensionATR"]),
+		"t3_roundtrip_cost_atr", parseFloatValue(diagnostics["roundtripCostATR"]),
 		"diagnostics", diagnostics,
 	)
+}
+
+func pretouchT3OverlayRejectMetadata(leadMissReason string, result PretouchDetectionResult) map[string]any {
+	if len(result.Diagnostics) == 0 || !pretouchT3OverlayMissLoggable(result.Reason) {
+		return nil
+	}
+	diagnostics := cloneMetadata(result.Diagnostics)
+	category := pretouchT3OverlayMissReasonCategory(result.Reason)
+	return map[string]any{
+		"signalSource":                 "pretouch-t3-overlay-shadow",
+		"signalKind":                   "entry-t3-overlay-watch",
+		"decisionState":                "rejected",
+		"t3OverlayRejected":            true,
+		"t3OverlayLeadMissReason":      leadMissReason,
+		"t3OverlayRejectReason":        result.Reason,
+		"t3OverlayRejectCategory":      category,
+		"t3OverlaySide":                stringValue(diagnostics["side"]),
+		"t3OverlayLevel":               parseFloatValue(diagnostics["level"]),
+		"t3OverlayTouchPrice":          parseFloatValue(diagnostics["touchPrice"]),
+		"t3OverlaySignalBarStart":      stringValue(diagnostics["signalBarStart"]),
+		"t3OverlayPreTouchSeconds":     parseFloatValue(diagnostics["preTouchSeconds"]),
+		"t3OverlaySpeed300sATR":        parseFloatValue(diagnostics["speed300sATR"]),
+		"t3OverlayMinAbsSpeed300sATR":  parseFloatValue(diagnostics["minAbsSpeed300sATR"]),
+		"t3OverlayEff300s":             parseFloatValue(diagnostics["eff300s"]),
+		"t3OverlayMaxEff300s":          parseFloatValue(diagnostics["maxEff300s"]),
+		"t3OverlayTouchExtensionATR":   parseFloatValue(diagnostics["touchExtensionATR"]),
+		"t3OverlayRoundtripCostATR":    parseFloatValue(diagnostics["roundtripCostATR"]),
+		"t3OverlayLongStructureReady":  boolValue(diagnostics["longStructureReady"]),
+		"t3OverlayShortStructureReady": boolValue(diagnostics["shortStructureReady"]),
+		"t3OverlayDiagnostics":         diagnostics,
+	}
 }
 
 func (e *bkLiveEthPretouchTimingEngine) shouldLogT3ShadowOverlayMiss(key string) bool {
