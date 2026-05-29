@@ -531,6 +531,13 @@ func (p *Platform) buildLiveExecutionPlanFromMarketData(
 		Semantics:           semantics,
 	}
 	cfg := buildStrategyReplayConfig(context)
+	switch normalized := normalizeStrategyEngineKey(engineKey); normalized {
+	case bkLiveEthPretouchTimingEngineKey:
+		// Pretouch timing is live-only: EvaluateSignal consumes real-time runtime
+		// source states and does not need a warmed offline execution plan.
+		return nil, nil
+	}
+
 	replayExecutionSource := cfg.ExecutionDataSource
 	if replayExecutionSource == "tick" {
 		// Live sessions still evaluate and trigger on real-time tick events, but the
@@ -565,10 +572,6 @@ func (p *Platform) buildLiveExecutionPlanFromMarketData(
 	switch normalized := normalizeStrategyEngineKey(engineKey); normalized {
 	case "bk-default", bkLiveIntrabarSMA5T2Only0p5BpsEngineKey, bkLiveIntrabarSMA5BaselinePlusT3EnhancedEngineKey:
 		result, err = runStrategyReplayOnMinuteBars(cfg, signals, minuteBars)
-	case bkLiveEthPretouchTimingEngineKey:
-		// Pretouch timing engine is a live-only engine and computes state dynamically in EvaluateSignal.
-		// It does not use or support offline batch replay for plan generation.
-		return nil, nil
 	default:
 		result, err = engine.Run(context)
 	}
