@@ -23,6 +23,7 @@ type PretouchDetectorConfig struct {
 
 	// Breakout structure tolerance
 	StructureToleranceBps float64 // 0.5
+	T3StructureMode       string  // strict_current or prev3_dominates
 
 	// Sizing
 	BaseShare float64 // 0.80 (ETH-only)
@@ -37,6 +38,7 @@ func DefaultPretouchDetectorConfig() PretouchDetectorConfig {
 		CostQ50Threshold:      0.116865,
 		CostQ50Penalty:        0.50,
 		StructureToleranceBps: defaultT2BreakoutShapeToleranceBps,
+		T3StructureMode:       "strict_current",
 		BaseShare:             0.80,
 	}
 }
@@ -401,8 +403,13 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 	var side string
 	var level float64
 	var touchPrice float64
-	longReady := pretouchT3LongStructureReady(prevBar3.High, prevBar2.High, prevBar1.High)
-	shortReady := pretouchT3ShortStructureReady(prevBar3.Low, prevBar2.Low, prevBar1.Low)
+	structureMode := normalizePretouchT3StructureMode(d.config.T3StructureMode)
+	longStrictReady := pretouchT3LongStructureReadyStrict(prevBar3.High, prevBar2.High, prevBar1.High)
+	shortStrictReady := pretouchT3ShortStructureReadyStrict(prevBar3.Low, prevBar2.Low, prevBar1.Low)
+	longRelaxedReady := pretouchT3LongStructureReadyPrev3Dominates(prevBar3.High, prevBar2.High, prevBar1.High)
+	shortRelaxedReady := pretouchT3ShortStructureReadyPrev3Dominates(prevBar3.Low, prevBar2.Low, prevBar1.Low)
+	longReady := pretouchT3LongStructureReady(prevBar3.High, prevBar2.High, prevBar1.High, structureMode)
+	shortReady := pretouchT3ShortStructureReady(prevBar3.Low, prevBar2.Low, prevBar1.Low, structureMode)
 	if tick.Price >= prevBar3.High && longReady {
 		side = "long"
 		level = prevBar3.High
@@ -437,8 +444,15 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 		"prevBar1":               pretouchBarSnapshot(&prevBar1),
 		"prevBar2":               pretouchBarSnapshot(&prevBar2),
 		"prevBar3":               pretouchBarSnapshot(&prevBar3),
+		"structureMode":          structureMode,
 		"longStructureReady":     longReady,
 		"shortStructureReady":    shortReady,
+		"longStrictReady":        longStrictReady,
+		"shortStrictReady":       shortStrictReady,
+		"longRelaxedReady":       longRelaxedReady,
+		"shortRelaxedReady":      shortRelaxedReady,
+		"strictWouldTrigger":     (side == "long" && longStrictReady) || (side == "short" && shortStrictReady),
+		"relaxedWouldTrigger":    (side == "long" && longRelaxedReady) || (side == "short" && shortRelaxedReady),
 		"maxPreTouchSeconds":     d.config.MaxPreTouchSeconds,
 		"minAbsSpeed300sATR":     d.config.MinSpeed300sATR,
 		"maxEff300s":             d.config.MaxEff300s,
@@ -522,8 +536,9 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 		CostPenalty:       costPenalty,
 	}
 	return PretouchDetectionResult{
-		Detected: true,
-		Event:    event,
+		Detected:    true,
+		Event:       event,
+		Diagnostics: diagnostics,
 	}
 }
 
@@ -549,7 +564,30 @@ func pretouchShortStructureReady(prevLow2, prevLow1, toleranceBps float64) bool 
 	return prevLow2 <= prevLow1*(1+toleranceBps/10000.0)
 }
 
-func pretouchT3LongStructureReady(prevHigh3, prevHigh2, prevHigh1 float64) bool {
+func normalizePretouchT3StructureMode(value string) string {
+	switch value {
+	case "prev3_dominates":
+		return "prev3_dominates"
+	default:
+		return "strict_current"
+	}
+}
+
+func pretouchT3LongStructureReady(prevHigh3, prevHigh2, prevHigh1 float64, structureMode string) bool {
+	if normalizePretouchT3StructureMode(structureMode) == "prev3_dominates" {
+		return pretouchT3LongStructureReadyPrev3Dominates(prevHigh3, prevHigh2, prevHigh1)
+	}
+	return pretouchT3LongStructureReadyStrict(prevHigh3, prevHigh2, prevHigh1)
+}
+
+func pretouchT3ShortStructureReady(prevLow3, prevLow2, prevLow1 float64, structureMode string) bool {
+	if normalizePretouchT3StructureMode(structureMode) == "prev3_dominates" {
+		return pretouchT3ShortStructureReadyPrev3Dominates(prevLow3, prevLow2, prevLow1)
+	}
+	return pretouchT3ShortStructureReadyStrict(prevLow3, prevLow2, prevLow1)
+}
+
+func pretouchT3LongStructureReadyStrict(prevHigh3, prevHigh2, prevHigh1 float64) bool {
 	return prevHigh3 > 0 &&
 		prevHigh2 > 0 &&
 		prevHigh1 > 0 &&
@@ -558,13 +596,29 @@ func pretouchT3LongStructureReady(prevHigh3, prevHigh2, prevHigh1 float64) bool 
 		prevHigh1 > prevHigh2
 }
 
-func pretouchT3ShortStructureReady(prevLow3, prevLow2, prevLow1 float64) bool {
+func pretouchT3ShortStructureReadyStrict(prevLow3, prevLow2, prevLow1 float64) bool {
 	return prevLow3 > 0 &&
 		prevLow2 > 0 &&
 		prevLow1 > 0 &&
 		prevLow3 < prevLow2 &&
 		prevLow3 < prevLow1 &&
 		prevLow1 < prevLow2
+}
+
+func pretouchT3LongStructureReadyPrev3Dominates(prevHigh3, prevHigh2, prevHigh1 float64) bool {
+	return prevHigh3 > 0 &&
+		prevHigh2 > 0 &&
+		prevHigh1 > 0 &&
+		prevHigh3 > prevHigh2 &&
+		prevHigh3 > prevHigh1
+}
+
+func pretouchT3ShortStructureReadyPrev3Dominates(prevLow3, prevLow2, prevLow1 float64) bool {
+	return prevLow3 > 0 &&
+		prevLow2 > 0 &&
+		prevLow1 > 0 &&
+		prevLow3 < prevLow2 &&
+		prevLow3 < prevLow1
 }
 
 // --- Internal computation helpers ---

@@ -26,9 +26,10 @@ const (
 	pretouchShadowOverlayQualitySizingParam    = "pretouchShadowOverlayQualitySizing"
 	pretouchShadowOverlayQualityFallbackParam  = "pretouchShadowOverlayQualityFallbackSubmit"
 	pretouchShadowT3StopGateEnabledParam       = "pretouchShadowT3StopGateEnabled"
+	pretouchShadowT3StructureModeParam         = "pretouchShadowT3StructureMode"
 	pretouchShadowT2StaticDownsizeParam        = "pretouchShadowT2StaticDownsize"
 	pretouchShadowT2StaticDownsizeCandidateID  = "static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize"
-	defaultPretouchShadowCandidateID           = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_det_stop_gate_20260521"
+	defaultPretouchShadowCandidateID           = "lead_q020_q040_overlay_q020_q040_t3_rf_cost_relaxed_prev3_dom_20260529"
 	defaultPretouchShadowLeadScale             = 1.5
 	defaultPretouchShadowT2StaticDownsizeScale = 0.25
 	defaultPretouchShadowLeadQuantityMinQty    = 0.20
@@ -67,6 +68,7 @@ const (
 	defaultPretouchShadowT3StopGateMaxAbsTouchExtensionATR = 0.40
 	defaultPretouchShadowT3StopGateHardStopATR             = 3.0
 	defaultPretouchShadowT3StopGateTrailingDelaySeconds    = 4740.0
+	defaultPretouchShadowT3StructureMode                   = "prev3_dominates"
 	pretouchT3ExitProfileBaselineID                        = "pr447_lifecycle_baseline"
 	pretouchT3ExitProfileDeterministicHard3Delay79ID       = "deterministic_stop_gate_hard3_delay_trailing_79m"
 )
@@ -707,6 +709,7 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	}
 	stopGate := pretouchT3DeterministicStopGate(ctx.ExecutionContext.Parameters, result.Event)
 	exitProfile := cloneMetadata(mapValue(stopGate["selectedExitProfile"]))
+	t3Diagnostics := cloneMetadata(result.Diagnostics)
 	signalBarStateKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKeyForKind(ctx.ExecutionContext.Symbol, "1h", currentBar, "entry-t3-overlay")
 	signalBarDecision := map[string]any{
@@ -723,6 +726,14 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 		"prevBar1":                    prevBar1Snapshot,
 		"prevBar2":                    prevBar2Snapshot,
 		"prevBar3":                    prevBar3Snapshot,
+		"t3StructureMode":             stringValue(t3Diagnostics["structureMode"]),
+		"t3StrictWouldTrigger":        boolValue(t3Diagnostics["strictWouldTrigger"]),
+		"t3RelaxedWouldTrigger":       boolValue(t3Diagnostics["relaxedWouldTrigger"]),
+		"t3LongStrictReady":           boolValue(t3Diagnostics["longStrictReady"]),
+		"t3ShortStrictReady":          boolValue(t3Diagnostics["shortStrictReady"]),
+		"t3LongRelaxedReady":          boolValue(t3Diagnostics["longRelaxedReady"]),
+		"t3ShortRelaxedReady":         boolValue(t3Diagnostics["shortRelaxedReady"]),
+		"t3OverlayDiagnostics":        cloneMetadata(t3Diagnostics),
 		"pretouchShadowOverlaySizing": cloneMetadata(overlaySizing),
 		"pretouchT3StopGate":          cloneMetadata(stopGate),
 		"pretouchT3ExitProfile":       cloneMetadata(exitProfile),
@@ -732,6 +743,10 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 		"pretouchEvent":                 result.Event,
 		"pretouchEventShape":            "t3_swing",
 		"pretouchShadowOverlaySizing":   overlaySizing,
+		"pretouchT3StructureMode":       stringValue(t3Diagnostics["structureMode"]),
+		"pretouchT3StrictWouldTrigger":  boolValue(t3Diagnostics["strictWouldTrigger"]),
+		"pretouchT3RelaxedWouldTrigger": boolValue(t3Diagnostics["relaxedWouldTrigger"]),
+		"pretouchT3OverlayDiagnostics":  cloneMetadata(t3Diagnostics),
 		"pretouchT3StopGate":            stopGate,
 		"pretouchT3ExitProfile":         exitProfile,
 		"suggestedQuantity":             overlayQuantity,
@@ -802,6 +817,9 @@ func (e *bkLiveEthPretouchTimingEngine) logT3ShadowOverlayMiss(ctx StrategySigna
 		"t3_eff_300s", parseFloatValue(diagnostics["eff300s"]),
 		"t3_max_eff_300s", parseFloatValue(diagnostics["maxEff300s"]),
 		"t3_touch_extension_atr", parseFloatValue(diagnostics["touchExtensionATR"]),
+		"t3_structure_mode", stringValue(diagnostics["structureMode"]),
+		"t3_strict_would_trigger", boolValue(diagnostics["strictWouldTrigger"]),
+		"t3_relaxed_would_trigger", boolValue(diagnostics["relaxedWouldTrigger"]),
 		"t3_roundtrip_cost_atr", parseFloatValue(diagnostics["roundtripCostATR"]),
 		"diagnostics", diagnostics,
 	)
@@ -832,8 +850,15 @@ func pretouchT3OverlayRejectMetadata(leadMissReason string, result PretouchDetec
 		"t3OverlayMaxEff300s":          parseFloatValue(diagnostics["maxEff300s"]),
 		"t3OverlayTouchExtensionATR":   parseFloatValue(diagnostics["touchExtensionATR"]),
 		"t3OverlayRoundtripCostATR":    parseFloatValue(diagnostics["roundtripCostATR"]),
+		"t3OverlayStructureMode":       stringValue(diagnostics["structureMode"]),
 		"t3OverlayLongStructureReady":  boolValue(diagnostics["longStructureReady"]),
 		"t3OverlayShortStructureReady": boolValue(diagnostics["shortStructureReady"]),
+		"t3OverlayLongStrictReady":     boolValue(diagnostics["longStrictReady"]),
+		"t3OverlayShortStrictReady":    boolValue(diagnostics["shortStrictReady"]),
+		"t3OverlayLongRelaxedReady":    boolValue(diagnostics["longRelaxedReady"]),
+		"t3OverlayShortRelaxedReady":   boolValue(diagnostics["shortRelaxedReady"]),
+		"t3OverlayStrictWouldTrigger":  boolValue(diagnostics["strictWouldTrigger"]),
+		"t3OverlayRelaxedWouldTrigger": boolValue(diagnostics["relaxedWouldTrigger"]),
 		"t3OverlayDiagnostics":         diagnostics,
 	}
 }
@@ -893,6 +918,10 @@ func pretouchShadowSubmitContextFromEvaluation(ctx StrategySignalEvaluationConte
 func pretouchT3OverlayConfigFromParameters(base PretouchDetectorConfig, parameters map[string]any) PretouchDetectorConfig {
 	config := base
 	config.MinSpeed300sATR = firstPositive(parseFloatValue(parameters["pretouchShadowOverlaySpeedThreshold"]), defaultPretouchShadowOverlaySpeedMin)
+	config.T3StructureMode = normalizePretouchT3StructureMode(firstNonEmpty(
+		stringValue(parameters[pretouchShadowT3StructureModeParam]),
+		config.T3StructureMode,
+	))
 	if value := parseFloatValue(parameters["pretouchShadowOverlayMaxPreTouchSec"]); value > 0 {
 		config.MaxPreTouchSeconds = value
 	}
@@ -987,17 +1016,18 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 	liveSizingPromotionBlocker := "sample_size_lt_30_or_depth_not_calibrated"
 	if riskOnEnabled {
 		submittedQuantityAfterShadow = shadowLeadQuantity
-		submittedSizingMode = "testnet_shadow_lead_scale_intent_quantity"
+		submittedSizingMode = "testnet_direct_lead_scale_intent_quantity"
 		if leadQuantityBandEnabled {
-			submittedSizingMode = "testnet_shadow_lead_rf_cost_quantity_band"
+			submittedSizingMode = "testnet_direct_lead_rf_cost_quantity_band"
 		}
-		liveSizingPromotionState = "testnet_shadow_risk_on_collect"
+		liveSizingPromotionState = "testnet_direct_risk_on_execution"
+		liveSizingPromotionBlocker = "mainnet_blocked_sandbox_only"
 	}
 
 	return map[string]any{
 		"mode":                               pretouchShadowModeTestnetCollect,
 		"candidateID":                        firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
-		"stage":                              "testnet_shadow_collect",
+		"stage":                              "testnet_direct_execution",
 		"submittedSizingMode":                submittedSizingMode,
 		"submittedQuantity":                  submittedQuantityAfterShadow,
 		"submittedQuantityBeforeShadow":      productionQuantity,
@@ -1017,7 +1047,7 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 		"shadowLeadQuantityCapped":           uncappedShadowLeadQuantity > shadowLeadQuantity,
 		"maxShadowSubmittedQuantity":         maxSubmittedQuantity,
 		"shadowLeadQuantityDelta":            shadowLeadQuantity - productionQuantity,
-		"shadowOverlayExecution":             "testnet_shadow_t3_event_source_guarded",
+		"shadowOverlayExecution":             "testnet_direct_t3_event_source_guarded",
 		"currentTopDepthCoverage":            currentCoverage,
 		"shadowTopDepthCoverage":             shadowCoverage,
 		"minTopDepthCoverage":                minCoverage,
@@ -1637,14 +1667,14 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	if overlayEnabled {
 		submittedOverlayQuantity = shadowOverlayQuantity
 	}
-	overlaySizingMode := "testnet_shadow_t3_overlay_scale_intent_quantity"
+	overlaySizingMode := "testnet_direct_t3_overlay_scale_intent_quantity"
 	if qualitySizing != nil && boolValue(qualitySizing["enabled"]) {
-		overlaySizingMode = "testnet_shadow_t3_overlay_rf_cost_quality_quantity"
+		overlaySizingMode = "testnet_direct_t3_overlay_rf_cost_quality_quantity"
 	}
 	return map[string]any{
 		"mode":                               pretouchShadowModeTestnetCollect,
 		"candidateID":                        firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
-		"stage":                              "testnet_shadow_collect",
+		"stage":                              "testnet_direct_execution",
 		"overlayEventSource":                 "t3_swing",
 		"overlaySizingMode":                  overlaySizingMode,
 		"overlayBaseShare":                   overlayBaseShare,
@@ -1678,8 +1708,8 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 		"researchStrict15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowStrict15CalendarPct"]), defaultPretouchShadowStrict15Pct),
 		"researchSevere15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowSevere15CalendarPct"]), defaultPretouchShadowSevere15Pct),
 		"researchLeadAdverseBaselinePct":     firstPositive(parseFloatValue(parameters["pretouchShadowLeadAdverseBaselinePct"]), 22.971648),
-		"liveSizingPromotionState":           "testnet_shadow_overlay_collect",
-		"liveSizingPromotionBlocker":         "sample_size_lt_30_or_depth_not_calibrated",
+		"liveSizingPromotionState":           "testnet_direct_overlay_execution",
+		"liveSizingPromotionBlocker":         "mainnet_blocked_sandbox_only",
 		"pretouchShadowOverlayQualitySizing": cloneMetadata(qualitySizing),
 	}
 }

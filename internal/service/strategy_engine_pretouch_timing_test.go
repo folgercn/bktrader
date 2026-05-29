@@ -322,7 +322,7 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	if got := parseFloatValue(shadow["submittedQuantityBeforeShadow"]); math.Abs(got-0.12) > 1e-9 {
 		t.Fatalf("expected before-shadow quantity 0.12, got %v in %#v", got, shadow)
 	}
-	if got := stringValue(shadow["submittedSizingMode"]); got != "testnet_shadow_lead_rf_cost_quantity_band" {
+	if got := stringValue(shadow["submittedSizingMode"]); got != "testnet_direct_lead_rf_cost_quantity_band" {
 		t.Fatalf("expected lead quantity band sizing mode, got %s in %#v", got, shadow)
 	}
 	if got := parseFloatValue(shadow["leadQuantityBandScore"]); math.Abs(got-0.75) > 1e-9 {
@@ -688,6 +688,61 @@ func TestPretouchTimingEngineSubmitsT3OverlayForSandboxShadow(t *testing.T) {
 	}
 }
 
+func TestPretouchTimingEngineSubmitsRelaxedT3OverlayWithStrictComparisonTelemetry(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT3StructureModeParam] = "prev3_dominates"
+	ctx.ExecutionContext.Parameters["pretouchSpeedThreshold"] = 100.0
+	bars := ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
+	bars[len(bars)-3].(map[string]any)["high"] = 104.0
+	bars[len(bars)-2].(map[string]any)["high"] = 103.0
+
+	if decision, err := engine.EvaluateSignal(ctx); err != nil {
+		t.Fatalf("first evaluate failed: %v", err)
+	} else if decision.Action != "wait" {
+		t.Fatalf("expected first tick to wait, got %#v", decision)
+	}
+
+	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
+	enablePretouchRiskOnShadow(&ctx, true)
+	ctx.ExecutionContext.Parameters[pretouchShadowT3StructureModeParam] = "prev3_dominates"
+	ctx.ExecutionContext.Parameters["pretouchSpeedThreshold"] = 100.0
+	bars = ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
+	bars[len(bars)-3].(map[string]any)["high"] = 104.0
+	bars[len(bars)-2].(map[string]any)["high"] = 103.0
+	setPretouchOrderBook(&ctx, 106.09, 106.1)
+
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "advance-plan" {
+		t.Fatalf("expected relaxed T3 overlay advance-plan, got action=%s reason=%s metadata=%#v", decision.Action, decision.Reason, decision.Metadata)
+	}
+	if got := stringValue(decision.Metadata["pretouchT3StructureMode"]); got != "prev3_dominates" {
+		t.Fatalf("expected relaxed structure mode telemetry, got %s", got)
+	}
+	if boolValue(decision.Metadata["pretouchT3StrictWouldTrigger"]) {
+		t.Fatalf("expected strict comparison telemetry to be false: %#v", decision.Metadata["pretouchT3OverlayDiagnostics"])
+	}
+	if !boolValue(decision.Metadata["pretouchT3RelaxedWouldTrigger"]) {
+		t.Fatalf("expected relaxed comparison telemetry to be true: %#v", decision.Metadata["pretouchT3OverlayDiagnostics"])
+	}
+	signalBarDecision := mapValue(decision.Metadata["signalBarDecision"])
+	if got := stringValue(signalBarDecision["t3StructureMode"]); got != "prev3_dominates" {
+		t.Fatalf("expected signalBarDecision relaxed structure mode, got %s in %#v", got, signalBarDecision)
+	}
+	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
+	if intent == nil || intent.SignalKind != "entry-t3-overlay" {
+		t.Fatalf("expected relaxed T3 overlay intent, got %#v", intent)
+	}
+	if got := stringValue(intent.Metadata["pretouchT3StructureMode"]); got != "prev3_dominates" {
+		t.Fatalf("expected intent to carry relaxed structure telemetry, got %s", got)
+	}
+}
+
 func TestPretouchTimingEngineSubmitsT3OverlayFromSignalBarHighTouch(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
@@ -984,7 +1039,7 @@ func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *
 	if overlay == nil {
 		t.Fatalf("expected pretouchShadowOverlaySizing metadata: %#v", decision.Metadata)
 	}
-	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_rf_cost_quality_quantity" {
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_direct_t3_overlay_rf_cost_quality_quantity" {
 		t.Fatalf("expected RF quality sizing mode, got %s in %#v", got, overlay)
 	}
 	if got := parseFloatValue(overlay["shadowOverlayQuantityBeforeQuality"]); math.Abs(got-0.08) > 1e-9 {
@@ -1089,7 +1144,7 @@ func TestPretouchTimingEngineAllowsExplicitT3OverlayQualityFallbackSubmit(t *tes
 	if !boolValue(overlay["submittedOverlayOrderEnabled"]) {
 		t.Fatalf("expected explicit fallback submit to allow overlay order: %#v", overlay)
 	}
-	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_scale_intent_quantity" {
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_direct_t3_overlay_scale_intent_quantity" {
 		t.Fatalf("expected fixed overlay sizing mode on model missing, got %s", got)
 	}
 	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])

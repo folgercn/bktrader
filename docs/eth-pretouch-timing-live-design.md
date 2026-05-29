@@ -39,17 +39,17 @@ T3 deterministic stop-gate lifecycle overlay**。原来的 2026-05-15 production
 | T3 overlay model artifact | `data/pretouch_t3_overlay_rf_model.json` |
 | T3 overlay model version | `20260520_t3_overlay_rf_cost_v1` (`trained_at=2026-05-20T00:00:00Z`) |
 | T3 overlay model features | `rf_probability`, `speed_300s_abs`, `eff_300s`, `touch_extension_abs`, `pre_touch_seconds`, `roundtrip_cost_atr`, `side_is_short` |
-| T3 overlay model metrics | accumulated-history `training_rows=71`, `rf_accuracy=0.873239`; walk-forward quantity-band evidence: overlay `45.639102%`, base adverse10 + overlay `68.610750%`, delta `+34.236470pp` vs fixed overlay |
+| T3 overlay model metrics | relaxed event pool `events=351`; walk-forward q020-q040 evidence: overlay `91.360615%`, lead q020-q040 + overlay `152.431532%` |
 | T3 lifecycle lead | deterministic rule `abs(speed_300s_atr) >= 0.65`、`eff_300s >= 0.85`、`250 <= pre_touch_seconds <= 900`、`abs(touch_extension_atr) <= 0.40`；这个 rule 是选择器，不是出场动作 |
 | T3 selected stop action | deterministic rule 命中的 T3 events 使用 `delay_trailing_updates_79m + hard_stop_atr_3.0`；未命中的 T3 events 继续走 PR447 lifecycle |
-| T3 lifecycle metrics | overlay `55.460787%` vs PR447 overlay `45.639101%`，lift `+9.821686pp`；max DD `-4.602568%`、worst trade `-0.557532%`、worst MAE `-276.224267bp` 与 PR447 headline risk 持平 |
-| Testnet shadow status | `testnet_shadow_collect`，只允许 Binance Futures testnet / `sandbox=true` 下采样，不是 mainnet live candidate |
-| Lead sizing | `productionSuggestedQuantity` 先由 RF probability / cost penalty 生成；shadow guard 通过时再按 production/max-production quality score 映射到 `0.20..0.40 ETH` |
+| T3 lifecycle metrics | relaxed q020-q040 event pool 上 deterministic stop-gate 后 overlay `194.323156%`，相对 relaxed q020-q040 baseline `91.360615%` lift `+102.962541pp` |
+| Testnet direct status | 兼容 mode 仍为 `testnet_shadow_collect`，但候选语义是 Binance Futures testnet / `sandbox=true` 下直接真实提交 `0.20..0.40 ETH`，不是 mainnet live candidate |
+| Lead sizing | `productionSuggestedQuantity` 先由 RF probability / cost penalty 生成；testnet direct guard 通过时再按 production/max-production quality score 映射到 `0.20..0.40 ETH` |
 | T3 overlay sizing | 独立 `entry-t3-overlay` event source，先形成固定基准 `pretouchBaseOrderQuantity * 0.40 * 2.0 = 0.080 ETH`，再由 T3 RF/cost quality 直接映射到绝对数量 `0.20..0.40 ETH` |
 | Production live delta | Report spec 的 `trail_start=0.9` 已按 base lead 建议在模板侧固化为 `trail_start_r=1.5`; live template 使用 `max_hold_hours=2.0`、`pretouchBaseShare=0.80` |
 
 当前 `research lead` 的身份由 **base event source + model version + live engine/template 参数 +
-shadow risk-on 参数 + T3 lifecycle selection rule**共同定义，不由单个收益数字定义。当前生产 testnet shadow 对齐的不是
+testnet direct risk-on 参数 + T3 lifecycle selection rule**共同定义，不由单个收益数字定义。当前生产 testnet direct 对齐的不是
 2026-05-13 的 `local_context_event_execution` union lead，也不是旧 V6 `candidate_001` /
 `reentry_window` baseline。需要复现这些历史对照组或只复现 `base lead` 时，必须在实验说明中显式标注。
 
@@ -81,10 +81,10 @@ T3 RF/cost quantity-band shadow sizing + T3 deterministic stop-gate lifecycle ov
 | `lead_quantity_0p20_0p40_adverse10` | `61.070916%` | 固定 canonical lead adverse10 ledger，只把 submitted lead quantity 按 live shadow 公式映射到 `0.20..0.40 ETH` | 正式 T2 quantity-band 线性 notional 回测口径；相对 `base_lead_adverse10_exact` lift `+38.099268pp`，相对旧 `lead 1.5x` lift `+26.613444pp`。 |
 | `t3_rf_cost_quantity_0p20_0p40_exact_lead` | `68.610750%` | `base_lead_adverse10_exact` + T3 RF/cost walk-forward quantity band `0.20..0.40 ETH` | T3 quantity-band 证据；不是 mainnet promotion 结果，需 testnet fill/depth 验真。 |
 | `t3_pr447_min_hold_sl_60m_overlay_q020_q040` | `45.639101%` | PR447 T3 RF/cost quantity-band overlay baseline；研究名保留 `min_hold_sl_60m`，但 live 对齐时不得实现成全局阻断 hard stop 的 min-hold SL | 当前 deterministic lifecycle lead 的对照基线。 |
-| `t3_deterministic_stop_gate_overlay_q020_q040` | `55.460787%` | T3 overlay events 默认走 PR447 lifecycle，只有 deterministic rule 命中的 5 个 event 切到 `delay_trailing_updates_79m + hard_stop_atr_3.0` | 当前 T3 lifecycle research lead；相对 PR447 overlay lift `+9.821686pp`，DD / worst trade / worst MAE 维持 PR447 headline risk。 |
+| `t3_relaxed_deterministic_stop_gate_overlay_q020_q040` | `194.323156%` | relaxed event pool + q020-q040 quantity band；deterministic rule 命中的 24 个 event 切到 `delay_trailing_updates_79m + hard_stop_atr_3.0` | 当前 relaxed T3 lifecycle research lead；相对 relaxed q020-q040 baseline `91.360615%` lift `+102.962541pp`。 |
 | `base_lead_adverse10_plus_t3_deterministic_stop_gate` | `78.432435%` | `base_lead_adverse10_exact` + deterministic T3 lifecycle overlay | 保守 base lead + 新 T3 lifecycle 的组合口径；用于和 PR447 `68.610750%` 对照。 |
 | `lead_q020_q040_plus_t3_q020_q040_pr447` | `106.710018%` | `lead_quantity_0p20_0p40_adverse10` + PR447 `t3_rf_cost_quantity_0p20_0p40`，按月 additive bundle | PR447 sizing/lifecycle headline；worst month `-1.464655%`、negative month `1`、event-order DD `-4.682954%`，仍未建模更大 submitted quantity 的额外冲击。 |
-| `lead_q020_q040_plus_t3_deterministic_stop_gate` | `116.531703%` | `lead_quantity_0p20_0p40_adverse10` + `t3_deterministic_stop_gate_overlay_q020_q040`，按月 additive bundle | 当前 research lead headline 口径；相对 PR447 headline lift `+9.821686pp`。按 rounded 月度账本重算，worst month 约 `-1.107464%`、negative month `1`；额外 slippage/depth degradation 仍未建模。 |
+| `lead_q020_q040_plus_t3_relaxed_deterministic_stop_gate` | `255.394073%` | `lead_quantity_0p20_0p40_adverse10` + relaxed deterministic T3 overlay，按月 additive bundle | 当前 relaxed research headline 口径；overlay worst month `-3.357137%`、negative month `1`、max DD `-7.827585%`；额外 slippage/depth degradation 仍未建模。 |
 | `legacy_lead_1p5_overlay_2p0_strict15` | `28.970948%` | 旧 `lead_scale=1.5`、`overlay_scale=2.0`、strict impact proxy、15bp pressure | 历史连续性对照，不再代表当前 `research lead`。 |
 
 2026-05-26 复验旧 T2 lead-side `reentry_window` + `reentry_size_schedule=[0.20, 0.10]`
@@ -474,15 +474,15 @@ research 增强一次性接进 Go live。提交版本的边界如下：
 | --- | --- | --- |
 | `breakout_shape_tolerance_bps` | **已接入当前 ETH pretouch live** | `PretouchEventDetector` 使用 `StructureToleranceBps` 判断 `prev_high_2` / `prev_low_2` 是否 ready；默认来自 `defaultT2BreakoutShapeToleranceBps=0.5`，session 参数可覆盖非负值。 |
 | Breakout 容差语义 | **near-equal shape tolerance** | 当前 `0.5` bps 是 original_t2 结构容差：long 需要 `prev_high_2 >= prev_high_1 * (1 - 0.5/10000)`，short 需要 `prev_low_2 <= prev_low_1 * (1 + 0.5/10000)`；breakout level 仍锁定 `prev_high_2` / `prev_low_2`，不额外放宽触价门槛。 |
-| T3 结构 / `t3_swing` | **已接入 testnet shadow event source** | Go live engine 在 original_t2 未触发时检测 T3 swing：long 需 `prev_high_3 > prev_high_2 && prev_high_3 > prev_high_1 && prev_high_1 > prev_high_2`，short 对称；仅在 `testnet_shadow_collect` 下启用，不改变 production lead。 |
-| `2.0x T3 overlay` | **已接入 testnet shadow 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。scale/share 和最终 submitted quantity 均有硬上限。 |
-| T3 RF/cost quality sizing | **已接入 testnet shadow artifact + absolute quantity band** | `data/pretouch_t3_overlay_rf_model.json` 使用 T3 专用 RF 估计事件胜率，再把 overlay 直接映射到 `0.20..0.40` ETH absolute quantity band；默认 `0.080` ETH fixed overlay 等价于 `2.5..5.0x` quality multiplier。模型缺失或 feature build failed 时默认阻断 overlay submit 并写 `model_missing` / `feature_build_failed` metadata，避免污染 q020/q040 candidate 样本；只有显式 `pretouchShadowOverlayQualityFallbackSubmit=true` 才允许 fixed overlay fallback submit。 |
-| T2/lead quantity band | **已接入 testnet shadow 真实提交数量** | `testnet_shadow_collect` 默认启用 risk-on lead sizing，可用 `pretouchShadowSubmitRiskOnQuantity=false` 显式关闭；只有 live 语义、账户 binding `sandbox=true`、`executionMode=rest` 且 depth/spread guard 通过时，`suggestedQuantity` 才从 production sizing 映射到 `0.20..0.40 ETH`。旧 `1.5x` lead scale 仍保留为无 band 参数时的兼容 fallback。 |
-| T2 static downsize | **已接入 testnet shadow 真实提交数量** | `static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize` 在 `testnet_shadow_collect` 下默认启用；命中规则且未触发 PP 时，对已通过 risk-on guard 的 `submittedQuantityAfterShadow` 乘以 `0.25`。非 sandbox / guard 未通过只记录 candidate 与 block reason，不改 production quantity。 |
-| 当前 submitted sizing | **testnet shadow 条件放大 + 条件降仓** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty` 仍先按 production RF/cost 生成；通过 risk-on guard 后再按 `productionSuggestedQuantity / maxProductionQuantity` 的质量分数映射到 `0.20..0.40 ETH`。若 T2 static downsize 命中，再对该 testnet shadow submitted quantity 乘以 `0.25`。T3 overlay 为独立 `entry-t3-overlay` intent，T3 RF/cost quality 直接映射到 `0.20..0.40 ETH`，并受 `pretouchShadowMaxSubmittedQuantity=0.40` 限制。 |
-| Testnet shadow | **允许进入 risk-on 采样阶段** | 用真实 `0.20..0.40 ETH` lead quantity 和 T3 overlay `0.20..0.40 ETH` entry proposal 采集 testnet decision/order/fill/depth telemetry；readiness 状态仍不是 mainnet live candidate。 |
+| T3 结构 / `t3_swing` | **已接入 testnet direct event source** | Go live engine 在 original_t2 未触发时检测 T3 swing：relaxed 口径为 long `prev_high_3 > prev_high_2 && prev_high_3 > prev_high_1`，short 对称；仍由兼容参数 `testnet_shadow_collect` 启用，不改变 mainnet production lead。 |
+| `2.0x T3 overlay` | **已接入 testnet direct 真实 entry proposal** | T3 overlay 使用 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`，默认 base quantity `0.100` 时 initial overlay order 为 `0.080` ETH；仅当 live 语义、`sandbox=true`、`executionMode=rest`、speed/depth/spread guard 通过时生成 `entry-t3-overlay` proposal。scale/share 和最终 submitted quantity 均有硬上限。 |
+| T3 RF/cost quality sizing | **已接入 testnet direct artifact + absolute quantity band** | `data/pretouch_t3_overlay_rf_model.json` 使用 T3 专用 RF 估计事件胜率，再把 overlay 直接映射到 `0.20..0.40` ETH absolute quantity band；默认 `0.080` ETH fixed overlay 等价于 `2.5..5.0x` quality multiplier。模型缺失或 feature build failed 时默认阻断 overlay submit 并写 `model_missing` / `feature_build_failed` metadata，避免污染 q020/q040 candidate 样本；只有显式 `pretouchShadowOverlayQualityFallbackSubmit=true` 才允许 fixed overlay fallback submit。 |
+| T2/lead quantity band | **已接入 testnet direct 真实提交数量** | testnet direct 默认启用 risk-on lead sizing，可用 `pretouchShadowSubmitRiskOnQuantity=false` 显式关闭；只有 live 语义、账户 binding `sandbox=true`、`executionMode=rest` 且 depth/spread guard 通过时，`suggestedQuantity` 才从 production sizing 映射到 `0.20..0.40 ETH`。旧 `1.5x` lead scale 仍保留为无 band 参数时的兼容 fallback。 |
+| T2 static downsize | **保留代码路径但模板默认关闭** | `static_optimal_or_doc_a_ctx12h_range_le350_scale025_downsize` 仍可显式开启；当前 testnet direct 模板默认 `pretouchShadowT2StaticDownsize=false`，不再把 `0.20..0.40 ETH` 提交量缩小到 25%。 |
+| 当前 submitted sizing | **testnet direct 全量 quantity band** | Lead base `productionSuggestedQuantity = pretouchBaseOrderQuantity * pretouchBaseShare * clip(rf_probability * 2, 0, 2) * costPenalty` 仍先按 production RF/cost 生成；通过 risk-on guard 后再按 `productionSuggestedQuantity / maxProductionQuantity` 的质量分数映射到 `0.20..0.40 ETH`，默认不再 downsize。T3 overlay 为独立 `entry-t3-overlay` intent，T3 RF/cost quality 直接映射到 `0.20..0.40 ETH`，并受 `pretouchShadowMaxSubmittedQuantity=0.40` 限制。 |
+| Testnet direct | **允许进入全量 testnet 执行阶段** | 用真实 `0.20..0.40 ETH` lead quantity 和 T3 overlay `0.20..0.40 ETH` entry proposal 采集 testnet decision/order/fill/depth telemetry；mainnet 仍被 sandbox/account guard 阻断。 |
 
-#### Shadow 策略细节
+#### Testnet Direct 策略细节
 
 | 项 | Shadow 口径 |
 | --- | --- |
@@ -510,17 +510,17 @@ suggestedQuantity =
   * costPenalty
 ```
 
-其中 `pretouchBaseShare=0.80`，`positionSizingMode=intent_quantity`。Testnet shadow risk-on 阶段在
+其中 `pretouchBaseShare=0.80`，`positionSizingMode=intent_quantity`。Testnet direct risk-on 阶段在
 `sandbox=true`、`executionMode=rest`、risk-on 未显式关闭、depth/spread guard
 同时满足时，实际提交的 `suggestedQuantity` 会把 production quantity 相对 theoretical max
 `pretouchBaseOrderQuantity * pretouchBaseShare * 2.0` 的质量分数映射到 `0.20..0.40 ETH`。若任一条件不满足，metadata
 会写入 `submittedRiskOnQuantityBlockReason`，并保持 production sizing；`defaultOrderQuantity` 不得覆盖
-intent quantity。`pretouchShadowLeadQuantityBandSizing=true` 只在 shadow guard 通过后生效；
-旧 `pretouchShadowLeadScale=1.5` 仍保留为未带 quantity-band 参数的兼容 fallback。shadow path 的最终
+intent quantity。`pretouchShadowLeadQuantityBandSizing=true` 只在 testnet direct guard 通过后生效；
+旧 `pretouchShadowLeadScale=1.5` 仍保留为未带 quantity-band 参数的兼容 fallback。testnet path 的最终
 submitted quantity 被 `pretouchShadowMaxSubmittedQuantity` 硬限制，模板默认值为 `0.40` ETH。
 是否提交仍由 sandbox / REST / depth / spread guard 决定。
 
-T3 overlay 是单独的 testnet shadow event source，不把 lead RF probability 直接当仓位；它会把
+T3 overlay 是单独的 testnet direct event source，不把 lead RF probability 直接当仓位；它会把
 lead RF probability 作为 T3 专用 RF model 的一个输入特征。默认参数为
 `pretouchShadowOverlayBaseShare=0.40`、`pretouchShadowOverlayScale=2.0`、
 `pretouchShadowOverlaySpeedThreshold=0.35`、`pretouchShadowOverlayQualitySizing=true`、
@@ -537,11 +537,17 @@ quality 后 intent quantity 直接使用 `0.20..0.40` ETH absolute band。若 `p
 `submittedOverlayOrderBlockReason` 写入 `overlay_quality_model_missing` /
 `overlay_quality_feature_build_failed`。只有显式设置 `pretouchShadowOverlayQualityFallbackSubmit=true`
 时，才允许同一 guard 下提交 fixed `0.080` ETH overlay fallback；默认模板保持 false，避免同一
-candidateID 混入 fixed overlay 与 RF/cost quantity-band 样本。
+candidateID 混入 fixed overlay 与 RF/cost quantity-band 样本。历史参数名仍沿用 `pretouchShadow*`，
+但当前 testnet 候选语义是直接真实提交 `0.20..0.40` ETH，不再默认 downsize 或 shadow-only。
 
 #### T3 deterministic stop-gate lifecycle overlay
 
-2026-05-21 的最新 T3 lifecycle research lead 不是新增 entry event source，也不是替换 T3 RF/cost
+2026-05-29 relaxed event pool 复算后，deterministic stop-gate 在 q020-q040 quantity-band 上的
+overlay 为 `194.323156%`，相对 relaxed q020-q040 baseline `91.360615%` 是 `+102.962541pp`；
+对应 lead q020-q040 + overlay 为 `255.394073%`。artifact:
+`research/entry_redesign/scripts/output/timing_probability_unified/t3_overlay_deterministic_stop_gate_relaxed_prev3_dominates_20260529/t3_overlay_deterministic_stop_gate_summary.json`。
+
+2026-05-21 的 T3 lifecycle research lead 不是新增 entry event source，也不是替换 T3 RF/cost
 quality sizing。它只是在 T3 overlay event 已经入场后，用一个可解释 deterministic selector 决定是否切换
 出场生命周期：
 
@@ -595,42 +601,42 @@ selector 是 deterministic gate，action 是 `delay_trailing_updates_79m + hard_
 | T3 deterministic stop gate + exact lead | - | `78.432435%` | - | - | 在 PR447 T3 RF/cost quantity-band 基础上，只替换 deterministic gate 命中的 5 个 T3 event lifecycle；相对 PR447 `68.610750%` lift `+9.821686pp`。 |
 | T2 lead 0.20-0.40 ETH quantity-band | - | `61.070916%` | - | - | 正式 T2 quantity-band adverse10 线性 notional 口径；相对 base `+38.099268pp`，相对旧 `lead 1.5x` `+26.613444pp`。 |
 | T2 lead 0.20-0.40 + T3 RF/cost 0.20-0.40 | - | `106.710018%` | - | - | PR447 risk-on shadow headline；按月 additive bundle，worst month `-1.464655%`，event-order DD `-4.682954%`。 |
-| T2 lead 0.20-0.40 + T3 deterministic stop gate | - | `116.531703%` | - | - | 当前 research lead headline；相对 PR447 risk-on shadow headline lift `+9.821686pp`，按 rounded 月度账本 worst month 约 `-1.107464%`、negative month `1`。 |
+| T2 lead 0.20-0.40 + relaxed T3 deterministic stop gate | - | `255.394073%` | - | - | 当前 relaxed research headline；T3 overlay `194.323156%`，相对 relaxed q020-q040 baseline lift `+102.962541pp`，overlay worst month `-3.357137%`、negative month `1`。 |
 | 1.5x lead scale + 2.0x overlay strict impact proxy | - | `35.521555%` | `28.970948%` | `22.420341%` | 上一轮 lead-scale reference；15bp 跑赢基线，20bp 回到基线附近；当前只作历史连续性对照。 |
 | 2.0x lead scale + 2.0x overlay strict impact proxy | - | `31.024442%` | `24.473835%` | `17.923227%` | 不如 1.5x，不能继续推高 lead target |
 | Severe thin-book proxy (`1.5x/2.0x`) | - | `27.781680%` | `21.231073%` | `14.680465%` | severe 15/20bp 必须阻断放大 |
 
-Shadow 阶段的目标收益区间可以写成：
+Testnet direct 阶段的目标收益区间可以写成：
 
 - 主候选不是追求 base lead 的 `30%+` same-close，而是在 adverse10 / quantity-band 线性 notional
   口径下确认风险偏好放大后仍保留足够收益缓冲。
 - T2/lead `0.20..0.40 ETH` quantity-band 的正式回测为 `61.070916%`，相对
   `base_lead_adverse10_exact=22.971648%` 提升 `+38.099268pp`，相对旧 `lead 1.5x`
-  提升 `+26.613444pp`；这是进入 testnet shadow risk-on 采样的主依据。
+  提升 `+26.613444pp`；这是进入 testnet direct risk-on 执行的主依据。
 - T3 overlay 走 `0.20..0.40 ETH` absolute quantity band 的 walk-forward evidence 为
   `base_lead_adverse10_exact + overlay = 68.610750%`，但 worst month 扩大到 `-3.088880%`、
   DD 扩大到 `-4.602568%`。
-- Deterministic stop-gate lifecycle overlay 把 T3 overlay 从 PR447 的 `45.639101%` 提升到
-  `55.460787%`，在当前样本中保持 PR447 headline DD / worst trade / worst MAE。
-- 当前 combined headline 为 `lead_q020_q040_plus_t3_deterministic_stop_gate = 116.531703%`，
-  worst month 约 `-1.107464%`、negative month `1`。它仍是线性 notional
+- Relaxed deterministic stop-gate lifecycle overlay 把 T3 q020-q040 overlay 从 `91.360615%` 提升到
+  `194.323156%`，selector 命中 24 个 active events，lift `+102.962541pp`。
+- 当前 combined headline 为 `lead_q020_q040_plus_t3_relaxed_deterministic_stop_gate = 255.394073%`。
+  T3 overlay worst month `-3.357137%`、negative month `1`、max DD `-7.827585%`。它仍是线性 notional
   口径，没有额外建模更大 submitted quantity 的 slippage/depth degradation，因此只适合
-  testnet shadow 验真，不得跳过 fill/depth telemetry 直接成为 mainnet candidate。
+  testnet direct 验真，不得跳过 fill/depth telemetry 直接成为 mainnet candidate。
 - 若真实 fill/depth 校准后 15bp strict proxy 回落到 `base_lead_adverse10_exact` 以下，或者 20bp /
   severe profile 不能作为有效 kill-stress，该 sizing-lift 路线应停止。
 
-#### Shadow readiness gate
+#### Testnet Direct readiness gate
 
-进入 testnet shadow 的 gate：
+进入 testnet direct 的 gate：
 
 | Gate | 当前状态 | 结论 |
 | --- | --- | --- |
-| Research lead 身份已锁定 | base event/model + lead `0.20..0.40 ETH` quantity band + T3 overlay `0.20..0.40 ETH` RF/cost quality artifact + testnet shadow guard 已写入本文档 | pass |
+| Research lead 身份已锁定 | base event/model + lead `0.20..0.40 ETH` quantity band + T3 overlay `0.20..0.40 ETH` RF/cost quality artifact + testnet direct guard 已写入本文档 | pass |
 | 保守基线可复算 | `base_lead_adverse10_exact=22.971648%`，62 trades，0 negative months | pass |
 | Quantity-band formal report 有 lift | T2/lead qband `61.070916%` > baseline；PR447 bundle `106.710018%` > `base lead + T3 qband` | pass |
-| Deterministic lifecycle gate 有 lift | T3 overlay `55.460787%` > PR447 `45.639101%`，headline DD / worst trade / worst MAE 不恶化 | pass |
+| Deterministic lifecycle gate 有 lift | relaxed T3 overlay `194.323156%` > relaxed q020-q040 baseline `91.360615%`，lift `+102.962541pp` | pass |
 | Kill-stress 没被误通过 | severe 15bp `21.231073%` fail，strict 20bp `22.420341%` 不再提供足够 lift | pass |
-| Live telemetry 方向 | 旧 `1.5x` 样本 `6/6` combined pass；`0.20..0.40 ETH` qband 需要重新累计 | pass for shadow, blocks live candidate |
+| Live telemetry 方向 | 旧 `1.5x` 样本 `6/6` combined pass；`0.20..0.40 ETH` qband 需要重新累计 | pass for testnet direct, blocks mainnet candidate |
 | Live telemetry 样本数 | `6 < 30` | blocks live candidate |
 
 进入 `live_candidate_ready_for_human_review` 的 gate：

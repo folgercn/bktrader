@@ -1,0 +1,10 @@
+{
+  "note": "Research-only scored T3 events export; lifecycle attribution was skipped.",
+  "model_path": "/Users/wuyaocheng/Downloads/bkTrader-t3-relaxed-structure-backtest/data/pretouch_model.json",
+  "symbols": [
+    "ETHUSDT"
+  ],
+  "structure_mode": "prev3_dominates",
+  "events": 351,
+  "elapsed_seconds": 27.79
+}

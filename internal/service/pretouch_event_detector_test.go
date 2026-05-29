@@ -200,10 +200,56 @@ func TestPretouchEventDetectorT3OverlayDetectsIntrabarExtremeTouch(t *testing.T)
 	if result.Event.TouchPrice != 105.2 {
 		t.Fatalf("expected current bar high as touch price, got %v", result.Event.TouchPrice)
 	}
+	if got := stringValue(result.Diagnostics["structureMode"]); got != "strict_current" {
+		t.Fatalf("expected strict_current structure diagnostics, got %s in %#v", got, result.Diagnostics)
+	}
+	if !boolValue(result.Diagnostics["strictWouldTrigger"]) || !boolValue(result.Diagnostics["relaxedWouldTrigger"]) {
+		t.Fatalf("expected strict and relaxed diagnostics to trigger, got %#v", result.Diagnostics)
+	}
 
 	again := detector.OnTickT3Overlay(TickData{Time: start.Add(90 * time.Second), Price: 106})
 	if again.Detected || again.Reason != "t3_already_touched_this_bar" {
 		t.Fatalf("expected same-bar T3 dedupe, got detected=%v reason=%s", again.Detected, again.Reason)
+	}
+}
+
+func TestPretouchEventDetectorT3OverlayCanUseRelaxedPrev3DominatesStructure(t *testing.T) {
+	start := time.Date(2026, 5, 29, 5, 0, 0, 0, time.UTC)
+	config := DefaultPretouchDetectorConfig()
+	config.MinSpeed300sATR = 0
+	config.T3StructureMode = "prev3_dominates"
+	detector := NewPretouchEventDetector("ETHUSDT", config)
+	closedBars := []HourlyBar{
+		{OpenTime: start.Add(-6 * time.Hour), Open: 2000, High: 2001, Low: 1990, Close: 1998},
+		{OpenTime: start.Add(-5 * time.Hour), Open: 1998, High: 2002, Low: 1991, Close: 1999},
+		{OpenTime: start.Add(-4 * time.Hour), Open: 1999, High: 2003, Low: 1992, Close: 2000},
+		{OpenTime: start.Add(-3 * time.Hour), Open: 2000, High: 2009.40, Low: 1994, Close: 2001},
+		{OpenTime: start.Add(-2 * time.Hour), Open: 2001, High: 2006.86, Low: 1995, Close: 2002},
+		{OpenTime: start.Add(-1 * time.Hour), Open: 2002, High: 2005.88, Low: 1996, Close: 2003},
+	}
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     2003,
+		High:     2003,
+		Low:      2003,
+		Close:    2003,
+	})
+
+	result := detector.OnTickT3Overlay(TickData{Time: start.Add(60 * time.Second), Price: 2013.92})
+	if !result.Detected {
+		t.Fatalf("expected relaxed T3 overlay detection, got reason=%s diagnostics=%#v", result.Reason, result.Diagnostics)
+	}
+	if result.Event.Side != "long" || result.Event.Level != 2009.40 {
+		t.Fatalf("expected relaxed long at prev3 high, got side=%s level=%v", result.Event.Side, result.Event.Level)
+	}
+	if got := stringValue(result.Diagnostics["structureMode"]); got != "prev3_dominates" {
+		t.Fatalf("expected prev3_dominates structure mode, got %s in %#v", got, result.Diagnostics)
+	}
+	if boolValue(result.Diagnostics["strictWouldTrigger"]) {
+		t.Fatalf("expected old strict structure not to trigger, got %#v", result.Diagnostics)
+	}
+	if !boolValue(result.Diagnostics["relaxedWouldTrigger"]) || !boolValue(result.Diagnostics["longRelaxedReady"]) {
+		t.Fatalf("expected relaxed structure diagnostics to trigger, got %#v", result.Diagnostics)
 	}
 }
 

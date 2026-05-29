@@ -526,6 +526,7 @@ def summarize_variant(
     event_scores: pd.DataFrame,
     months: list[str],
     fixed_overlay_pct: float,
+    baseline_lead_adverse10_pct: float,
 ) -> SizingMetrics:
     active_events = event_scores[event_scores["event_multiplier"] > 0.0]
     active_trades = trades[trades["event_multiplier"] > 0.0]
@@ -539,7 +540,7 @@ def summarize_variant(
         method=variant.method,
         live_compatible=variant.live_compatible,
         calendar_sum_pct=calendar_sum,
-        lead_adverse10_plus_overlay_pct=round(BASELINE_LEAD_ADVERSE10_PCT + calendar_sum, 6),
+        lead_adverse10_plus_overlay_pct=round(float(baseline_lead_adverse10_pct) + calendar_sum, 6),
         overlay_delta_vs_fixed_pct=round(calendar_sum - fixed_overlay_pct, 6),
         worst_month_pct=round(float(min(by_month.values(), default=0.0)), 6),
         negative_months=int(sum(1 for value in by_month.values() if value < 0.0)),
@@ -632,6 +633,7 @@ def write_outputs(
     scored_events: Path,
     overlay_trades: Path | None,
     cost_threshold_atr: float,
+    baseline_lead_adverse10_pct: float,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     cached_base_trades = output_dir / "t3_overlay_rf_cost_base_trades.csv"
@@ -654,7 +656,7 @@ def write_outputs(
         "overlay_trades_input": overlay_trades_source,
         "months": months,
         "cost_threshold_atr": float(cost_threshold_atr),
-        "baseline_lead_adverse10_pct": BASELINE_LEAD_ADVERSE10_PCT,
+        "baseline_lead_adverse10_pct": float(baseline_lead_adverse10_pct),
         "metrics": [asdict(row) for row in metrics],
     }
     (output_dir / "t3_overlay_rf_cost_sizing_summary.json").write_text(
@@ -670,7 +672,7 @@ def write_outputs(
         f"- Overlay trades input: `{overlay_trades_source}`",
         f"- Months: {', '.join(months)}",
         f"- Cost threshold ATR: `{cost_threshold_atr}`",
-        f"- Baseline lead adverse10: `{BASELINE_LEAD_ADVERSE10_PCT:.6f}%`",
+        f"- Baseline lead adverse10: `{baseline_lead_adverse10_pct:.6f}%`",
         "",
         "## Variant Summary",
         "",
@@ -706,6 +708,7 @@ def run(
     early_horizon_seconds: int,
     cost_threshold_atr: float,
     random_state: int,
+    baseline_lead_adverse10_pct: float,
 ) -> dict[str, Any]:
     if overlay_trades is not None and overlay_trades.exists():
         base_trades = pd.read_csv(overlay_trades)
@@ -750,6 +753,7 @@ def run(
             event_scores=scored,
             months=months,
             fixed_overlay_pct=fixed_overlay_pct,
+            baseline_lead_adverse10_pct=baseline_lead_adverse10_pct,
         )
         metrics.append(row)
         all_event_scores.append(scored)
@@ -768,6 +772,7 @@ def run(
         scored_events=scored_events,
         overlay_trades=overlay_trades,
         cost_threshold_atr=cost_threshold_atr,
+        baseline_lead_adverse10_pct=baseline_lead_adverse10_pct,
     )
     return {
         "metrics": [asdict(row) for row in metrics],
@@ -798,6 +803,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--early-horizon-seconds", type=int, default=300)
     parser.add_argument("--cost-threshold-atr", type=float, default=0.10)
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument(
+        "--baseline-lead-adverse10-pct",
+        type=float,
+        default=BASELINE_LEAD_ADVERSE10_PCT,
+        help="Lead baseline pct to add to T3 overlay metrics; use 61.070916 for the current q020-q040 research lead.",
+    )
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
@@ -822,6 +833,7 @@ def main() -> int:
         early_horizon_seconds=int(args.early_horizon_seconds),
         cost_threshold_atr=float(args.cost_threshold_atr),
         random_state=int(args.random_state),
+        baseline_lead_adverse10_pct=float(args.baseline_lead_adverse10_pct),
     )
     best = payload["metrics"][0]
     print(

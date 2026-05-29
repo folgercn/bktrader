@@ -5746,6 +5746,10 @@ func deriveLiveSignalIntent(decision StrategySignalDecision, symbol string) *Sig
 	for _, key := range []string{
 		"pretouchEventShape",
 		"pretouchShadowOverlaySizing",
+		"pretouchT3StructureMode",
+		"pretouchT3StrictWouldTrigger",
+		"pretouchT3RelaxedWouldTrigger",
+		"pretouchT3OverlayDiagnostics",
 		"pretouchT3StopGate",
 		"pretouchT3ExitProfile",
 		"livePositionState",

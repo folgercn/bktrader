@@ -41,6 +41,7 @@ class T3EventConfig:
     bar_seconds: int = 3600
     max_pre_touch_seconds: float = 1800  # 默认 30min
     atr_lookback: int = 14
+    structure_mode: str = "strict_current"
 
 
 def generate_t3_events(
@@ -144,11 +145,14 @@ def generate_t3_events(
         sig_low = bars_1s_low[idx_start:idx_end]
 
         # T3 long 条件判定
-        t3_long_ready = (
-            prev_high_3 > prev_high_2
-            and prev_high_3 > prev_high_1
-            and prev_high_1 > prev_high_2
-        )
+        if config.structure_mode == "prev3_dominates":
+            t3_long_ready = prev_high_3 > prev_high_2 and prev_high_3 > prev_high_1
+        else:
+            t3_long_ready = (
+                prev_high_3 > prev_high_2
+                and prev_high_3 > prev_high_1
+                and prev_high_1 > prev_high_2
+            )
 
         if t3_long_ready:
             long_level = prev_high_3
@@ -175,11 +179,14 @@ def generate_t3_events(
                     events.append(event)
 
         # T3 short 条件判定
-        t3_short_ready = (
-            prev_low_3 < prev_low_2
-            and prev_low_3 < prev_low_1
-            and prev_low_1 < prev_low_2
-        )
+        if config.structure_mode == "prev3_dominates":
+            t3_short_ready = prev_low_3 < prev_low_2 and prev_low_3 < prev_low_1
+        else:
+            t3_short_ready = (
+                prev_low_3 < prev_low_2
+                and prev_low_3 < prev_low_1
+                and prev_low_1 < prev_low_2
+            )
 
         if t3_short_ready:
             short_level = prev_low_3
