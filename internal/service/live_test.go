@@ -1783,6 +1783,63 @@ func TestBuildLiveExecutionPlanFromMarketDataUsesLiveSnapshotForBaselinePlusT3En
 	}
 }
 
+func TestBuildLiveExecutionPlanFromMarketDataSkipsMarketSnapshotForPretouchTiming(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	session, err := platform.CreateLiveSession("", "live-main", bkLiveEthPretouchTimingStrategyID, map[string]any{
+		"symbol":              "ETHUSDT",
+		"signalTimeframe":     "1h",
+		"executionDataSource": "tick",
+	})
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	engine, engineKey, err := platform.resolveStrategyEngine(version.ID, parameters)
+	if err != nil {
+		t.Fatalf("resolve strategy engine failed: %v", err)
+	}
+	if got := normalizeStrategyEngineKey(engineKey); got != bkLiveEthPretouchTimingEngineKey {
+		t.Fatalf("expected pretouch timing engine, got %s", got)
+	}
+
+	originalFetch := fetchLiveCandleRange
+	fetchCalls := 0
+	fetchLiveCandleRange = func(symbol, resolution string, from, to time.Time) ([]candleBar, error) {
+		fetchCalls++
+		return nil, fmt.Errorf("upstream unavailable")
+	}
+	t.Cleanup(func() {
+		fetchLiveCandleRange = originalFetch
+	})
+
+	plan, err := platform.buildLiveExecutionPlanFromMarketData(
+		session,
+		version,
+		engine,
+		engineKey,
+		parameters,
+		defaultExecutionSemantics(ExecutionModeLive, parameters),
+	)
+	if err != nil {
+		t.Fatalf("pretouch timing should not require warmed minute bars, got %v", err)
+	}
+	if plan != nil {
+		t.Fatalf("expected no offline plan for pretouch timing, got %#v", plan)
+	}
+	if fetchCalls != 0 {
+		t.Fatalf("expected pretouch timing plan setup to skip REST warm fetches, got %d calls", fetchCalls)
+	}
+}
+
 func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
