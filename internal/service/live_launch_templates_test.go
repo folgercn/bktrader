@@ -197,6 +197,9 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowLeadQuantityBandSizingParam]) {
 				t.Fatalf("expected %s=true for T2 lead quantity band sizing", pretouchShadowLeadQuantityBandSizingParam)
 			}
+			if boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowT2StaticDownsizeParam]) {
+				t.Fatalf("expected %s=false for full-size testnet direct sizing", pretouchShadowT2StaticDownsizeParam)
+			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadQuantityMinQuantity"]); got != defaultPretouchShadowLeadQuantityMinQty {
 				t.Fatalf("expected pretouchShadowLeadQuantityMinQuantity=%v, got %v", defaultPretouchShadowLeadQuantityMinQty, got)
 			}
@@ -259,10 +262,10 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 				t.Fatalf("expected pretouchShadowOverlaySpeedThreshold=%v, got %v", defaultPretouchShadowOverlaySpeedMin, got)
 			}
 			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowSubmitRiskOnQuantityParam]) {
-				t.Fatalf("expected %s=true for testnet shadow risk-on sizing", pretouchShadowSubmitRiskOnQuantityParam)
+				t.Fatalf("expected %s=true for testnet direct risk-on sizing", pretouchShadowSubmitRiskOnQuantityParam)
 			}
 			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowSubmitOverlayOrderParam]) {
-				t.Fatalf("expected %s=true for testnet shadow overlay", pretouchShadowSubmitOverlayOrderParam)
+				t.Fatalf("expected %s=true for testnet direct overlay", pretouchShadowSubmitOverlayOrderParam)
 			}
 			for _, note := range item.Notes {
 				if strings.Contains(strings.ToLower(note), "sidecar") || strings.Contains(note, "localhost:9101") {

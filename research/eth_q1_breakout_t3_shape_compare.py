@@ -1507,6 +1507,12 @@ def run_second_bar_replay(
                     "min_hold_seconds_before_sl",
                     None,
                 )
+                active_min_hold_seconds_before_trailing_sl = _t3_exit_override(
+                    position_shape,
+                    t3_exit_overrides,
+                    "min_hold_seconds_before_trailing_sl",
+                    None,
+                )
                 hold_seconds = None
                 if position.get("entry_time") is not None:
                     hold_seconds = (bar_time - position["entry_time"]).total_seconds()
@@ -1515,13 +1521,18 @@ def run_second_bar_replay(
                     or hold_seconds is None
                     or hold_seconds >= float(active_min_hold_seconds_before_sl)
                 )
+                trailing_update_allowed = (
+                    active_min_hold_seconds_before_trailing_sl is None
+                    or hold_seconds is None
+                    or hold_seconds >= float(active_min_hold_seconds_before_trailing_sl)
+                )
 
                 if position["side"] == "long":
                     prev_hwm = position.get("hwm", position["entry_p"])
                     protected_before_bar = position.get("protected", False)
 
                     profit_atr = (prev_hwm - position["entry_p"]) / sig["atr"] if sig["atr"] > 0 else 0
-                    if profit_atr >= active_delayed_trailing_activation:
+                    if trailing_update_allowed and profit_atr >= active_delayed_trailing_activation:
                         trailing_sl = prev_hwm - active_trailing_stop_atr * sig["atr"]
                         position["sl"] = max(position["sl"], trailing_sl)
 
@@ -1538,7 +1549,7 @@ def run_second_bar_replay(
                         if not position["protected"] and high_value >= position["entry_p"] + active_profit_protect_atr * sig["atr"]:
                             position["protected"] = True
                         profit_atr = (position["hwm"] - position["entry_p"]) / sig["atr"] if sig["atr"] > 0 else 0
-                        if profit_atr >= active_delayed_trailing_activation:
+                        if trailing_update_allowed and profit_atr >= active_delayed_trailing_activation:
                             trailing_sl = position["hwm"] - active_trailing_stop_atr * sig["atr"]
                             position["sl"] = max(position["sl"], trailing_sl)
 
@@ -1547,7 +1558,7 @@ def run_second_bar_replay(
                     protected_before_bar = position.get("protected", False)
 
                     profit_atr = (position["entry_p"] - prev_lwm) / sig["atr"] if sig["atr"] > 0 else 0
-                    if profit_atr >= active_delayed_trailing_activation:
+                    if trailing_update_allowed and profit_atr >= active_delayed_trailing_activation:
                         trailing_sl = prev_lwm + active_trailing_stop_atr * sig["atr"]
                         position["sl"] = min(position["sl"], trailing_sl)
 
@@ -1564,7 +1575,7 @@ def run_second_bar_replay(
                         if not position["protected"] and low_value <= position["entry_p"] - active_profit_protect_atr * sig["atr"]:
                             position["protected"] = True
                         profit_atr = (position["entry_p"] - position["lwm"]) / sig["atr"] if sig["atr"] > 0 else 0
-                        if profit_atr >= active_delayed_trailing_activation:
+                        if trailing_update_allowed and profit_atr >= active_delayed_trailing_activation:
                             trailing_sl = position["lwm"] + active_trailing_stop_atr * sig["atr"]
                             position["sl"] = min(position["sl"], trailing_sl)
 

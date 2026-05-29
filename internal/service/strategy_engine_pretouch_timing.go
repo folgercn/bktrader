@@ -1016,17 +1016,18 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 	liveSizingPromotionBlocker := "sample_size_lt_30_or_depth_not_calibrated"
 	if riskOnEnabled {
 		submittedQuantityAfterShadow = shadowLeadQuantity
-		submittedSizingMode = "testnet_shadow_lead_scale_intent_quantity"
+		submittedSizingMode = "testnet_direct_lead_scale_intent_quantity"
 		if leadQuantityBandEnabled {
-			submittedSizingMode = "testnet_shadow_lead_rf_cost_quantity_band"
+			submittedSizingMode = "testnet_direct_lead_rf_cost_quantity_band"
 		}
-		liveSizingPromotionState = "testnet_shadow_risk_on_collect"
+		liveSizingPromotionState = "testnet_direct_risk_on_execution"
+		liveSizingPromotionBlocker = "mainnet_blocked_sandbox_only"
 	}
 
 	return map[string]any{
 		"mode":                               pretouchShadowModeTestnetCollect,
 		"candidateID":                        firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
-		"stage":                              "testnet_shadow_collect",
+		"stage":                              "testnet_direct_execution",
 		"submittedSizingMode":                submittedSizingMode,
 		"submittedQuantity":                  submittedQuantityAfterShadow,
 		"submittedQuantityBeforeShadow":      productionQuantity,
@@ -1046,7 +1047,7 @@ func pretouchShadowSizingFromParameters(parameters map[string]any, side string, 
 		"shadowLeadQuantityCapped":           uncappedShadowLeadQuantity > shadowLeadQuantity,
 		"maxShadowSubmittedQuantity":         maxSubmittedQuantity,
 		"shadowLeadQuantityDelta":            shadowLeadQuantity - productionQuantity,
-		"shadowOverlayExecution":             "testnet_shadow_t3_event_source_guarded",
+		"shadowOverlayExecution":             "testnet_direct_t3_event_source_guarded",
 		"currentTopDepthCoverage":            currentCoverage,
 		"shadowTopDepthCoverage":             shadowCoverage,
 		"minTopDepthCoverage":                minCoverage,
@@ -1666,14 +1667,14 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 	if overlayEnabled {
 		submittedOverlayQuantity = shadowOverlayQuantity
 	}
-	overlaySizingMode := "testnet_shadow_t3_overlay_scale_intent_quantity"
+	overlaySizingMode := "testnet_direct_t3_overlay_scale_intent_quantity"
 	if qualitySizing != nil && boolValue(qualitySizing["enabled"]) {
-		overlaySizingMode = "testnet_shadow_t3_overlay_rf_cost_quality_quantity"
+		overlaySizingMode = "testnet_direct_t3_overlay_rf_cost_quality_quantity"
 	}
 	return map[string]any{
 		"mode":                               pretouchShadowModeTestnetCollect,
 		"candidateID":                        firstNonEmpty(stringValue(parameters["pretouchShadowCandidateID"]), defaultPretouchShadowCandidateID),
-		"stage":                              "testnet_shadow_collect",
+		"stage":                              "testnet_direct_execution",
 		"overlayEventSource":                 "t3_swing",
 		"overlaySizingMode":                  overlaySizingMode,
 		"overlayBaseShare":                   overlayBaseShare,
@@ -1707,8 +1708,8 @@ func pretouchShadowOverlaySizingFromParameters(parameters map[string]any, side s
 		"researchStrict15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowStrict15CalendarPct"]), defaultPretouchShadowStrict15Pct),
 		"researchSevere15CalendarPct":        firstPositive(parseFloatValue(parameters["pretouchShadowSevere15CalendarPct"]), defaultPretouchShadowSevere15Pct),
 		"researchLeadAdverseBaselinePct":     firstPositive(parseFloatValue(parameters["pretouchShadowLeadAdverseBaselinePct"]), 22.971648),
-		"liveSizingPromotionState":           "testnet_shadow_overlay_collect",
-		"liveSizingPromotionBlocker":         "sample_size_lt_30_or_depth_not_calibrated",
+		"liveSizingPromotionState":           "testnet_direct_overlay_execution",
+		"liveSizingPromotionBlocker":         "mainnet_blocked_sandbox_only",
 		"pretouchShadowOverlayQualitySizing": cloneMetadata(qualitySizing),
 	}
 }

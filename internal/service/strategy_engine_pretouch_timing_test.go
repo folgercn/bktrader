@@ -322,7 +322,7 @@ func TestPretouchTimingEngineSubmitsRiskOnLeadQuantityForSandboxShadow(t *testin
 	if got := parseFloatValue(shadow["submittedQuantityBeforeShadow"]); math.Abs(got-0.12) > 1e-9 {
 		t.Fatalf("expected before-shadow quantity 0.12, got %v in %#v", got, shadow)
 	}
-	if got := stringValue(shadow["submittedSizingMode"]); got != "testnet_shadow_lead_rf_cost_quantity_band" {
+	if got := stringValue(shadow["submittedSizingMode"]); got != "testnet_direct_lead_rf_cost_quantity_band" {
 		t.Fatalf("expected lead quantity band sizing mode, got %s in %#v", got, shadow)
 	}
 	if got := parseFloatValue(shadow["leadQuantityBandScore"]); math.Abs(got-0.75) > 1e-9 {
@@ -1039,7 +1039,7 @@ func TestPretouchTimingEngineAppliesT3OverlayRFQualitySizingForSandboxShadow(t *
 	if overlay == nil {
 		t.Fatalf("expected pretouchShadowOverlaySizing metadata: %#v", decision.Metadata)
 	}
-	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_rf_cost_quality_quantity" {
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_direct_t3_overlay_rf_cost_quality_quantity" {
 		t.Fatalf("expected RF quality sizing mode, got %s in %#v", got, overlay)
 	}
 	if got := parseFloatValue(overlay["shadowOverlayQuantityBeforeQuality"]); math.Abs(got-0.08) > 1e-9 {
@@ -1144,7 +1144,7 @@ func TestPretouchTimingEngineAllowsExplicitT3OverlayQualityFallbackSubmit(t *tes
 	if !boolValue(overlay["submittedOverlayOrderEnabled"]) {
 		t.Fatalf("expected explicit fallback submit to allow overlay order: %#v", overlay)
 	}
-	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_shadow_t3_overlay_scale_intent_quantity" {
+	if got := stringValue(overlay["overlaySizingMode"]); got != "testnet_direct_t3_overlay_scale_intent_quantity" {
 		t.Fatalf("expected fixed overlay sizing mode on model missing, got %s", got)
 	}
 	quality := mapValue(overlay["pretouchShadowOverlayQualitySizing"])

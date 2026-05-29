@@ -329,13 +329,13 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchBaseShare":         0.80,
 		"pretouchCostQ50Threshold":  0.116865,
 		"pretouchCostQ50Penalty":    0.50,
-		// Testnet shadow risk-on sizing. The strategy still requires live sandbox REST
-		// context plus depth/spread guards before using risk-on lead or T3 overlay quantity.
+		// Testnet direct risk-on sizing. The legacy pretouchShadow* parameter names
+		// are retained for compatibility; sandbox REST and depth/spread guards still apply.
 		"pretouchShadowMode":                                   pretouchShadowModeTestnetCollect,
 		"pretouchShadowCandidateID":                            defaultPretouchShadowCandidateID,
 		"pretouchShadowLeadScale":                              defaultPretouchShadowLeadScale,
 		pretouchShadowLeadQuantityBandSizingParam:              true,
-		pretouchShadowT2StaticDownsizeParam:                    true,
+		pretouchShadowT2StaticDownsizeParam:                    false,
 		"pretouchShadowT2StaticDownsizeScale":                  defaultPretouchShadowT2StaticDownsizeScale,
 		"pretouchShadowLeadQuantityMinQuantity":                defaultPretouchShadowLeadQuantityMinQty,
 		"pretouchShadowLeadQuantityMaxQuantity":                defaultPretouchShadowLeadQuantityMaxQty,
@@ -387,7 +387,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 	return LiveLaunchTemplate{
 		Key:                 "binance-testnet-eth-pretouch-timing",
 		Name:                "Binance Testnet ETHUSDT Pretouch Timing",
-		Description:         "ETHUSDT 1h pretouch timing 策略：testnet shadow 真实提交 lead 0.20-0.40 ETH 与 T3 overlay 0.20-0.40 ETH quality sizing。",
+		Description:         "ETHUSDT 1h pretouch timing 策略：testnet 直接真实提交 lead 0.20-0.40 ETH 与 T3 overlay 0.20-0.40 ETH quality sizing。",
 		Symbol:              "ETHUSDT",
 		SignalTimeframe:     "1h",
 		DefaultDispatchMode: liveLaunchTemplateAutoDispatchMode(),
@@ -454,13 +454,13 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		},
 		Notes: []string{
 			"ETH Pretouch Timing 策略：Go 原生 DT3 timing classifier × RF probability accuracy × cost_q50_cut050。",
-			"Research shadow 口径：lead 0.20-0.40 ETH quantity band + overlay 2.0x + T3 RF/cost 0.20-0.40 ETH quantity band + deterministic T3 lifecycle selector；当前 headline evidence 为 116.531703%。",
+			"Testnet direct 口径：lead 0.20-0.40 ETH quantity band + overlay 2.0x + T3 RF/cost 0.20-0.40 ETH quantity band + deterministic T3 lifecycle selector；relaxed event pool deterministic stop-gate 后 overlay evidence 为 194.323156%，lead+overlay 为 255.394073%。",
 			"Lead 模型默认从 data/pretouch_model.json 加载；部署可用 BK_PRETOUCH_MODEL_PATH 覆盖模型路径。",
 			"T3 overlay quality 模型默认从 data/pretouch_t3_overlay_rf_model.json 加载；部署可用 BK_PRETOUCH_T3_OVERLAY_MODEL_PATH 覆盖模型路径。",
 			"live-runner/monolith 默认启动 pretouch model scheduler：artifact hot reload 每 30s 检查一次，T2/T3 retrain 默认每日尝试；新模型校验通过后原子替换，已运行 session 下一次 EvaluateSignal 自动读取新模型。",
 			"Lead 模型不可用或校验失败时 lead 事件自动 skip；T3 quality 模型不可用或 feature build failed 时默认阻断 overlay submit，只有显式 pretouchShadowOverlayQualityFallbackSubmit=true 才允许 fixed overlay fallback。",
-			"positionSizingMode=intent_quantity；testnet shadow 在 sandbox=true、executionMode=rest、depth/spread guard 通过时，真实 lead entry 数量按 RF/cost 映射到 0.20-0.40 ETH 提交。",
-			"T3 overlay 只在 testnet shadow、t3_swing 触达、speed_abs>=0.35 且 sandbox/rest/depth guard 通过时生成真实 entry proposal；RF/cost quality 将 overlay 数量映射到 0.20-0.40 ETH，非 sandbox 或显式关闭时只记录阻断原因。",
+			"positionSizingMode=intent_quantity；testnet direct 在 sandbox=true、executionMode=rest、depth/spread guard 通过时，真实 lead entry 数量按 RF/cost 映射到 0.20-0.40 ETH 提交；默认不启用 T2 static downsize。",
+			"T3 overlay 只在 testnet direct、t3_swing 触达、speed_abs>=0.35 且 sandbox/rest/depth guard 通过时生成真实 entry proposal；RF/cost quality 将 overlay 数量映射到 0.20-0.40 ETH，非 sandbox 或显式关闭时只记录阻断原因。",
 			"T3 deterministic stop gate 命中的 overlay position 使用 hard_stop_atr=3.0 且只延迟 trailing 更新 4740s；hard stop 从开仓后立即有效，未命中继续走 PR447 lifecycle baseline。",
 			"该模板暂列默认推荐项；dispatchMode 由前端提交时显式注入，默认选择 auto-dispatch，可在前端切回 manual-review。",
 			"重训 source CSV 不存在或校验失败时只记录 warning 并保留上一版模型；不会用坏模型覆盖现有 session。",
