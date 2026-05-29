@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -231,6 +232,12 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			}
 			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowMaxSubmittedQuantityParam]); got != defaultPretouchShadowMaxSubmittedQuantity {
 				t.Fatalf("expected %s=%v, got %v", pretouchShadowMaxSubmittedQuantityParam, defaultPretouchShadowMaxSubmittedQuantity, got)
+			}
+			if got := parseFloatValue(item.LaunchPayload.LiveSessionOverrides["pretouchShadowLeadAdverseBaselinePct"]); math.Abs(got-61.07091667649647) > 1e-9 {
+				t.Fatalf("expected current q020-q040 lead baseline, got %v", got)
+			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowT3StructureModeParam]); got != defaultPretouchShadowT3StructureMode {
+				t.Fatalf("expected %s=%s, got %s", pretouchShadowT3StructureModeParam, defaultPretouchShadowT3StructureMode, got)
 			}
 			if !boolValue(item.LaunchPayload.LiveSessionOverrides[pretouchShadowT3StopGateEnabledParam]) {
 				t.Fatalf("expected %s=true for deterministic T3 lifecycle selector", pretouchShadowT3StopGateEnabledParam)

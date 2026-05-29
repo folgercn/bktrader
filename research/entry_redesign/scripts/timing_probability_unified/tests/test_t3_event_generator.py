@@ -127,6 +127,27 @@ class TestT3LongCondition:
         long_events = events[events["side"] == "long"] if not events.empty else pd.DataFrame()
         assert len(long_events) == 0, "Should not detect T3 long when condition fails"
 
+    def test_relaxed_long_only_requires_prev3_above_prev2_and_prev1(self):
+        """relaxed 口径下 prev_high_2/prev_high_1 谁大不重要。"""
+        hourly = [
+            {"open": 100, "high": 110, "low": 95, "close": 105},
+            {"open": 97, "high": 107, "low": 94, "close": 98},
+            {"open": 98, "high": 105, "low": 93, "close": 102},
+            {"open": 102, "high": 112, "low": 99, "close": 108},
+        ]
+
+        bars_1s = _make_1s_bars(hourly)
+        config = T3EventConfig(
+            symbol="ETHUSDT",
+            resample_rule="1h",
+            bar_seconds=3600,
+            structure_mode="prev3_dominates",
+        )
+        events = generate_t3_events(bars_1s, config)
+
+        long_events = events[events["side"] == "long"] if not events.empty else pd.DataFrame()
+        assert len(long_events) >= 1, f"Expected relaxed T3 long event, got {len(long_events)}"
+
 
 class TestT3ShortCondition:
     """T3 short 结构: prev_low_3 < prev_low_2 AND prev_low_3 < prev_low_1 AND prev_low_1 < prev_low_2"""
@@ -167,6 +188,27 @@ class TestT3ShortCondition:
 
         short_events = events[events["side"] == "short"] if not events.empty else pd.DataFrame()
         assert len(short_events) == 0, "Should not trigger when signal bar doesn't touch level"
+
+    def test_relaxed_short_only_requires_prev3_below_prev2_and_prev1(self):
+        """relaxed 口径下 prev_low_2/prev_low_1 谁小不重要。"""
+        hourly = [
+            {"open": 95, "high": 100, "low": 88, "close": 93},
+            {"open": 93, "high": 98, "low": 90, "close": 94},
+            {"open": 94, "high": 97, "low": 92, "close": 91},
+            {"open": 91, "high": 95, "low": 86, "close": 89},
+        ]
+
+        bars_1s = _make_1s_bars(hourly, low_at_quarter=True)
+        config = T3EventConfig(
+            symbol="ETHUSDT",
+            resample_rule="1h",
+            bar_seconds=3600,
+            structure_mode="prev3_dominates",
+        )
+        events = generate_t3_events(bars_1s, config)
+
+        short_events = events[events["side"] == "short"] if not events.empty else pd.DataFrame()
+        assert len(short_events) >= 1, f"Expected relaxed T3 short event, got {len(short_events)}"
 
 
 class TestOutputSchema:

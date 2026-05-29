@@ -350,6 +350,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchShadowOverlayQualityCostThresholdATR":         defaultPretouchShadowOverlayQualityCost,
 		pretouchShadowMaxSubmittedQuantityParam:                defaultPretouchShadowMaxSubmittedQuantity,
 		"pretouchShadowOverlaySpeedThreshold":                  defaultPretouchShadowOverlaySpeedMin,
+		pretouchShadowT3StructureModeParam:                     defaultPretouchShadowT3StructureMode,
 		pretouchShadowT3StopGateEnabledParam:                   true,
 		pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        defaultPretouchShadowT3StopGateMinAbsSpeed300sATR,
 		pretouchShadowT3StopGateMinEff300sParam:                defaultPretouchShadowT3StopGateMinEff300s,
@@ -363,7 +364,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"pretouchShadowStrict10CalendarPct":                    defaultPretouchShadowStrict10Pct,
 		"pretouchShadowStrict15CalendarPct":                    defaultPretouchShadowStrict15Pct,
 		"pretouchShadowSevere15CalendarPct":                    defaultPretouchShadowSevere15Pct,
-		"pretouchShadowLeadAdverseBaselinePct":                 22.971648,
+		"pretouchShadowLeadAdverseBaselinePct":                 61.07091667649647,
 		// Speed gate
 		"pretouchSpeedThreshold": 0.228106,
 		// Quality filters

@@ -184,7 +184,7 @@ def collect_t3_trades(
     return pd.DataFrame(rows)
 
 
-def build_scored_t3_events(symbols: list[str]) -> pd.DataFrame:
+def build_scored_t3_events(symbols: list[str], *, structure_mode: str = "strict_current") -> pd.DataFrame:
     with Path(MODEL_PATH).open("r", encoding="utf-8") as fh:
         model = json.load(fh)
     parts = []
@@ -197,7 +197,11 @@ def build_scored_t3_events(symbols: list[str]) -> pd.DataFrame:
         )
         events = generate_t3_events(
             bars,
-            T3EventConfig(symbol=symbol, max_pre_touch_seconds=900.0),
+            T3EventConfig(
+                symbol=symbol,
+                max_pre_touch_seconds=900.0,
+                structure_mode=structure_mode,
+            ),
         )
         if events.empty:
             continue
@@ -433,6 +437,7 @@ def write_outputs(
     months: list[str],
     symbols: list[str],
     elapsed_seconds: float,
+    structure_mode: str,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     trades_out = trades.copy()
@@ -453,6 +458,7 @@ def write_outputs(
         "model_path": str(MODEL_PATH),
         "months": months,
         "symbols": symbols,
+        "structure_mode": structure_mode,
         "trades": int(len(trades)),
         "matched_trades": int(pd.to_numeric(trades.get("rf_probability"), errors="coerce").notna().sum())
         if not trades.empty
@@ -474,6 +480,7 @@ def write_outputs(
         f"- Model: `{MODEL_PATH}`",
         f"- Months: {', '.join(months)}",
         f"- Symbols: {', '.join(symbols)}",
+        f"- T3 structure mode: `{structure_mode}`",
         f"- Trades: {len(trades)}",
         f"- Scored events: {len(events)}",
         f"- Runtime: {elapsed_seconds:.2f}s",
@@ -511,6 +518,30 @@ def write_outputs(
     (output_dir / "t3_probability_overlay_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_scored_events_only(
+    *,
+    output_dir: Path,
+    events: pd.DataFrame,
+    symbols: list[str],
+    elapsed_seconds: float,
+    structure_mode: str,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    events.to_csv(output_dir / "t3_probability_overlay_scored_events.csv", index=False)
+    payload = {
+        "note": "Research-only scored T3 events export; lifecycle attribution was skipped.",
+        "model_path": str(MODEL_PATH),
+        "symbols": symbols,
+        "structure_mode": structure_mode,
+        "events": int(len(events)),
+        "elapsed_seconds": round(float(elapsed_seconds), 2),
+    }
+    (output_dir / "t3_probability_overlay_summary.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--months", nargs="+", default=EXTENDED_MONTHS)
@@ -518,6 +549,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeframe", default="1h")
     parser.add_argument("--initial-balance", type=float, default=INITIAL_BALANCE)
     parser.add_argument("--reentry-fill-policy", default="strict_next_second_cross")
+    parser.add_argument(
+        "--scored-events-only",
+        action="store_true",
+        help="Only generate/scored T3 event CSV for downstream overlay sizing; skip lifecycle attribution tables.",
+    )
+    parser.add_argument(
+        "--structure-mode",
+        choices=["strict_current", "prev3_dominates"],
+        default="strict_current",
+        help=(
+            "T3 structure predicate for generated/scored events. strict_current preserves the "
+            "historical prev3/prev2/prev1 ordering; prev3_dominates only requires prev3 to "
+            "dominate prev2 and prev1."
+        ),
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -536,6 +582,17 @@ def main() -> int:
     started = time.time()
     months = list(args.months)
     symbols = list(args.symbols)
+    if args.scored_events_only:
+        events = build_scored_t3_events(symbols, structure_mode=str(args.structure_mode))
+        write_scored_events_only(
+            output_dir=Path(args.output_dir),
+            events=events,
+            symbols=symbols,
+            elapsed_seconds=time.time() - started,
+            structure_mode=str(args.structure_mode),
+        )
+        logger.info("Wrote %s", args.output_dir)
+        return 0
     trades = collect_t3_trades(
         symbols=symbols,
         months=months,
@@ -543,7 +600,7 @@ def main() -> int:
         initial_balance=float(args.initial_balance),
         reentry_fill_policy=str(args.reentry_fill_policy),
     )
-    events = build_scored_t3_events(symbols)
+    events = build_scored_t3_events(symbols, structure_mode=str(args.structure_mode))
     enriched = enrich_trades_with_scores(trades, events)
     gate_summary = summarize_gates(enriched, months, symbols)
     bucket_summary = summarize_buckets(enriched)
@@ -556,6 +613,7 @@ def main() -> int:
         months=months,
         symbols=symbols,
         elapsed_seconds=time.time() - started,
+        structure_mode=str(args.structure_mode),
     )
     logger.info("Wrote %s", args.output_dir)
     return 0
