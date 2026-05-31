@@ -2330,13 +2330,26 @@ func applyLaunchTemplateContext(state map[string]any, context liveLaunchTemplate
 
 func applyLaunchTemplateBaselineState(state map[string]any) map[string]any {
 	if !liveIntradayResearchBaselineStateMatchesTemplate(state) {
-		return state
+		return applyEthPretouchResearchLeadTemplateState(state)
 	}
 	normalized := cloneMetadata(state)
 	for key, value := range liveIntradayResearchBaselineOverrides(stringValue(normalized["strategyEngine"])) {
 		normalized[key] = value
 	}
 	normalized["launchTemplateBaseline"] = "intraday-research"
+	return normalized
+}
+
+func applyEthPretouchResearchLeadTemplateState(state map[string]any) map[string]any {
+	if !ethPretouchResearchLeadStateMatchesTemplate(state) {
+		return state
+	}
+	normalized := cloneMetadata(state)
+	normalized["positionSizingMode"] = "intent_quantity"
+	normalized["dir2_zero_initial"] = false
+	normalized["zero_initial_mode"] = strategyZeroInitialModePosition
+	normalized["launchTemplateBaseline"] = "eth-pretouch-research-lead"
+	delete(normalized, livePendingZeroInitialWindowStateKey)
 	return normalized
 }
 
@@ -2363,6 +2376,24 @@ func liveIntradayResearchBaselineStateMatchesTemplate(state map[string]any) bool
 	default:
 		return false
 	}
+}
+
+func ethPretouchResearchLeadStateMatchesTemplate(state map[string]any) bool {
+	key := strings.ToLower(strings.TrimSpace(stringValue(state["launchTemplateKey"])))
+	if key != "binance-testnet-eth-pretouch-timing" {
+		return false
+	}
+	symbol := NormalizeSymbol(firstNonEmpty(
+		stringValue(state["launchTemplateSymbol"]),
+		stringValue(state["symbol"]),
+		stringValue(state["lastSymbol"]),
+	))
+	timeframe := normalizeSignalBarInterval(firstNonEmpty(
+		stringValue(state["launchTemplateTimeframe"]),
+		stringValue(state["signalTimeframe"]),
+		stringValue(state["timeframe"]),
+	))
+	return symbol == "ETHUSDT" && timeframe == "1h"
 }
 
 func (p *Platform) updateSignalRuntimeLaunchTemplateContext(sessionID string, context liveLaunchTemplateContext) (domain.SignalRuntimeSession, error) {

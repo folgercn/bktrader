@@ -273,6 +273,8 @@ func NewStore() *Store {
 			"signalTimeframe":                              "1h",
 			"executionDataSource":                          "tick",
 			"positionSizingMode":                           "intent_quantity",
+			"dir2_zero_initial":                            false,
+			"zero_initial_mode":                            "position",
 			"defaultOrderQuantity":                         0.100,
 			"pretouchBaseOrderQuantity":                    0.100,
 			"pretouchBaseShare":                            0.80,
