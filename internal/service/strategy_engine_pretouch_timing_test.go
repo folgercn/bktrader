@@ -693,7 +693,6 @@ func TestPretouchTimingEngineSubmitsRelaxedT3OverlayWithStrictComparisonTelemetr
 	engine := testPretouchTimingEngine("fast", 0.75)
 	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
 	enablePretouchRiskOnShadow(&ctx, true)
-	ctx.ExecutionContext.Parameters[pretouchShadowT3StructureModeParam] = "prev3_dominates"
 	ctx.ExecutionContext.Parameters["pretouchSpeedThreshold"] = 100.0
 	bars := ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
 	bars[len(bars)-3].(map[string]any)["high"] = 104.0
@@ -707,7 +706,6 @@ func TestPretouchTimingEngineSubmitsRelaxedT3OverlayWithStrictComparisonTelemetr
 
 	ctx = testPretouchT3OverlaySignalContext(start.Add(60*time.Second), 106.1)
 	enablePretouchRiskOnShadow(&ctx, true)
-	ctx.ExecutionContext.Parameters[pretouchShadowT3StructureModeParam] = "prev3_dominates"
 	ctx.ExecutionContext.Parameters["pretouchSpeedThreshold"] = 100.0
 	bars = ctx.SourceStates["binance-kline|signal|ETHUSDT|1h"].(map[string]any)["bars"].([]any)
 	bars[len(bars)-3].(map[string]any)["high"] = 104.0
