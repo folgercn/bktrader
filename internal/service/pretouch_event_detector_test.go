@@ -158,6 +158,7 @@ func TestPretouchEventDetectorT3OverlayDetectsIntrabarExtremeTouch(t *testing.T)
 	start := time.Date(2026, 5, 27, 6, 0, 0, 0, time.UTC)
 	config := DefaultPretouchDetectorConfig()
 	config.MinSpeed300sATR = 0
+	config.T3StructureMode = "strict_current"
 	detector := NewPretouchEventDetector("ETHUSDT", config)
 	closedBars := []HourlyBar{
 		{OpenTime: start.Add(-6 * time.Hour), Open: 100, High: 106, Low: 94, Close: 100},
@@ -210,6 +211,13 @@ func TestPretouchEventDetectorT3OverlayDetectsIntrabarExtremeTouch(t *testing.T)
 	again := detector.OnTickT3Overlay(TickData{Time: start.Add(90 * time.Second), Price: 106})
 	if again.Detected || again.Reason != "t3_already_touched_this_bar" {
 		t.Fatalf("expected same-bar T3 dedupe, got detected=%v reason=%s", again.Detected, again.Reason)
+	}
+}
+
+func TestDefaultPretouchDetectorConfigUsesRelaxedT3Structure(t *testing.T) {
+	config := DefaultPretouchDetectorConfig()
+	if got := normalizePretouchT3StructureMode(config.T3StructureMode); got != "prev3_dominates" {
+		t.Fatalf("expected default T3 structure mode prev3_dominates, got %s", got)
 	}
 }
 

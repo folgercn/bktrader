@@ -324,6 +324,8 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 		"max_hold_hours":   2.0,
 		// Sizing
 		"positionSizingMode":        "intent_quantity",
+		"dir2_zero_initial":         false,
+		"zero_initial_mode":         strategyZeroInitialModePosition,
 		"defaultOrderQuantity":      0.100,
 		"pretouchBaseOrderQuantity": 0.100,
 		"pretouchBaseShare":         0.80,
@@ -460,6 +462,7 @@ func buildEthPretouchTimingTemplate(strategyID, strategyName, strategyVersionID 
 			"live-runner/monolith 默认启动 pretouch model scheduler：artifact hot reload 每 30s 检查一次，T2/T3 retrain 默认每日尝试；新模型校验通过后原子替换，已运行 session 下一次 EvaluateSignal 自动读取新模型。",
 			"Lead 模型不可用或校验失败时 lead 事件自动 skip；T3 quality 模型不可用或 feature build failed 时默认阻断 overlay submit，只有显式 pretouchShadowOverlayQualityFallbackSubmit=true 才允许 fixed overlay fallback。",
 			"positionSizingMode=intent_quantity；testnet direct 在 sandbox=true、executionMode=rest、depth/spread guard 通过时，真实 lead entry 数量按 RF/cost 映射到 0.20-0.40 ETH 提交；默认不启用 T2 static downsize。",
+			"ETH pretouch research lead 使用触达后的 direct lead entry；显式关闭 dir2 zero-initial reentry window，避免继承 BTC intraday reentry baseline。",
 			"T3 overlay 只在 testnet direct、t3_swing 触达、speed_abs>=0.35 且 sandbox/rest/depth guard 通过时生成真实 entry proposal；RF/cost quality 将 overlay 数量映射到 0.20-0.40 ETH，非 sandbox 或显式关闭时只记录阻断原因。",
 			"T3 deterministic stop gate 命中的 overlay position 使用 hard_stop_atr=3.0 且只延迟 trailing 更新 4740s；hard stop 从开仓后立即有效，未命中继续走 PR447 lifecycle baseline。",
 			"该模板暂列默认推荐项；dispatchMode 由前端提交时显式注入，默认选择 auto-dispatch，可在前端切回 manual-review。",

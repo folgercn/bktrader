@@ -170,6 +170,12 @@ func TestLiveLaunchTemplatesExposeBinanceTestnetVariants(t *testing.T) {
 			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["positionSizingMode"]); got != "intent_quantity" {
 				t.Fatalf("expected pretouch template positionSizingMode=intent_quantity, got %s", got)
 			}
+			if boolValue(item.LaunchPayload.LiveSessionOverrides["dir2_zero_initial"]) {
+				t.Fatalf("expected pretouch template to disable dir2 zero-initial reentry window")
+			}
+			if got := stringValue(item.LaunchPayload.LiveSessionOverrides["zero_initial_mode"]); got != strategyZeroInitialModePosition {
+				t.Fatalf("expected pretouch template zero_initial_mode=%s, got %s", strategyZeroInitialModePosition, got)
+			}
 			if item.DefaultDispatchMode != "auto-dispatch" {
 				t.Fatalf("expected pretouch template default dispatchMode auto-dispatch, got %s", item.DefaultDispatchMode)
 			}

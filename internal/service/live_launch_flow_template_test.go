@@ -358,6 +358,48 @@ func TestLaunchTemplateBaselineRequiresMatchingScope(t *testing.T) {
 	}
 }
 
+func TestETHPretouchTemplateSyncAlignsResearchLeadState(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+	session, err := platform.CreateLiveSession("", "live-main", "strategy-bk-eth-pretouch-timing", map[string]any{
+		"symbol":          "ETHUSDT",
+		"signalTimeframe": "1h",
+	})
+	if err != nil {
+		t.Fatalf("create pretouch live session failed: %v", err)
+	}
+	state := cloneMetadata(session.State)
+	state["launchTemplateKey"] = "binance-testnet-eth-pretouch-timing"
+	state["launchTemplateName"] = "Binance Testnet ETHUSDT Pretouch Timing"
+	state[livePendingZeroInitialWindowStateKey] = map[string]any{
+		"side":                "SELL",
+		"plannedReentryPrice": 2025.34,
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, state)
+	if err != nil {
+		t.Fatalf("seed pretouch template state failed: %v", err)
+	}
+
+	synced, err := platform.syncLiveSessionRuntime(session)
+	if err != nil {
+		t.Fatalf("sync live session runtime failed: %v", err)
+	}
+	if boolValue(synced.State["dir2_zero_initial"]) {
+		t.Fatalf("expected ETH pretouch research lead to disable dir2 zero-initial reentry")
+	}
+	if got := stringValue(synced.State["zero_initial_mode"]); got != strategyZeroInitialModePosition {
+		t.Fatalf("expected ETH pretouch zero_initial_mode=%s, got %s", strategyZeroInitialModePosition, got)
+	}
+	if got := stringValue(synced.State["positionSizingMode"]); got != "intent_quantity" {
+		t.Fatalf("expected ETH pretouch positionSizingMode=intent_quantity, got %s", got)
+	}
+	if _, ok := synced.State[livePendingZeroInitialWindowStateKey]; ok {
+		t.Fatalf("expected stale zero-initial window to be cleared for ETH pretouch research lead")
+	}
+	if got := stringValue(synced.State["launchTemplateBaseline"]); got != "eth-pretouch-research-lead" {
+		t.Fatalf("expected ETH pretouch research lead marker, got %s", got)
+	}
+}
+
 func TestSyncSignalRuntimeSessionPlanRefreshesStateWithoutStartingRuntime(t *testing.T) {
 	platform := NewPlatform(memory.NewStore())
 
