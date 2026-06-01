@@ -261,6 +261,41 @@ func TestPretouchEventDetectorT3OverlayCanUseRelaxedPrev3DominatesStructure(t *t
 	}
 }
 
+func TestPretouchEventDetectorT3OverlayDetectsProductionCurrentBarLowTouch(t *testing.T) {
+	start := time.Date(2026, 6, 1, 5, 0, 0, 0, time.UTC)
+	config := DefaultPretouchDetectorConfig()
+	config.MinSpeed300sATR = 0
+	detector := NewPretouchEventDetector("ETHUSDT", config)
+	closedBars := []HourlyBar{
+		{OpenTime: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Open: 2006.31, High: 2018.34, Low: 2005.83, Close: 2014.81},
+		{OpenTime: time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC), Open: 2014.81, High: 2014.97, Low: 1993.77, Close: 1994.01},
+		{OpenTime: time.Date(2026, 6, 1, 2, 0, 0, 0, time.UTC), Open: 1994.01, High: 2012.38, Low: 1993.45, Close: 2010.81},
+		{OpenTime: time.Date(2026, 6, 1, 3, 0, 0, 0, time.UTC), Open: 2010.85, High: 2016.74, Low: 2008.24, Close: 2008.75},
+		{OpenTime: time.Date(2026, 6, 1, 4, 0, 0, 0, time.UTC), Open: 2008.75, High: 2011.38, Low: 1994.03, Close: 1999.24},
+	}
+	detector.SyncBars(closedBars, &HourlyBar{
+		OpenTime: start,
+		Open:     1999.24,
+		High:     2000.25,
+		Low:      1993.45,
+		Close:    1994.11,
+	})
+
+	result := detector.OnTickT3Overlay(TickData{Time: start.Add(28*time.Minute + 46*time.Second), Price: 1994.11})
+	if !result.Detected {
+		t.Fatalf("expected production 2026-06-01 05:00 T3 short from current bar low, got reason=%s diagnostics=%#v", result.Reason, result.Diagnostics)
+	}
+	if result.Event.Side != "short" || result.Event.Level != 1993.45 {
+		t.Fatalf("expected short T3 at prev3 low 1993.45, got side=%s level=%v", result.Event.Side, result.Event.Level)
+	}
+	if result.Event.TouchPrice != 1993.45 {
+		t.Fatalf("expected current bar low touch price 1993.45, got %v", result.Event.TouchPrice)
+	}
+	if got := stringValue(result.Diagnostics["structureMode"]); got != "prev3_dominates" {
+		t.Fatalf("expected default relaxed structure mode, got %s in %#v", got, result.Diagnostics)
+	}
+}
+
 func TestPretouchEventDetectorRejectsInsufficientHistory(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	detector := NewPretouchEventDetector("ETHUSDT", DefaultPretouchDetectorConfig())
