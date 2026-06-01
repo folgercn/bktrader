@@ -38,7 +38,7 @@ func DefaultPretouchDetectorConfig() PretouchDetectorConfig {
 		CostQ50Threshold:      0.116865,
 		CostQ50Penalty:        0.50,
 		StructureToleranceBps: defaultT2BreakoutShapeToleranceBps,
-		T3StructureMode:       "strict_current",
+		T3StructureMode:       "prev3_dominates",
 		BaseShare:             0.80,
 	}
 }
