@@ -878,7 +878,7 @@ func (e *bkLiveEthPretouchTimingEngine) shouldLogT3ShadowOverlayMiss(key string)
 
 func pretouchT3OverlayMissLoggable(reason string) bool {
 	switch pretouchT3OverlayMissReasonCategory(reason) {
-	case "t3_pre_touch_seconds", "t3_speed_300s", "t3_eff_300s":
+	case "t3_no_level_touch", "t3_pre_touch_seconds", "t3_speed_300s", "t3_eff_300s":
 		return true
 	default:
 		return false

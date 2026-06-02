@@ -173,7 +173,14 @@ const (
 )
 
 func (p *Platform) ListLiveSessions() ([]domain.LiveSession, error) {
-	return p.store.ListLiveSessions()
+	items, err := p.store.ListLiveSessions()
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i] = p.withEffectiveLiveSessionParameterState(items[i])
+	}
+	return items, nil
 }
 
 // ListLiveSessionsSummary 返回剥离了重状态 (sourceStates, signalBarStates) 的简要会话列表
@@ -184,7 +191,7 @@ func (p *Platform) ListLiveSessionsSummary() ([]domain.LiveSession, error) {
 	}
 	stripped := make([]domain.LiveSession, len(items))
 	for i, item := range items {
-		newItem := item
+		newItem := p.withEffectiveLiveSessionParameterState(item)
 		newItem.State = stripHeavyState(item.State)
 		stripped[i] = newItem
 	}
@@ -4316,6 +4323,7 @@ func (p *Platform) evaluateLiveSignalDecision(session domain.LiveSession, summar
 		nextPlannedRole,
 		nextPlannedReason,
 	)
+	updatedState = applyEffectiveLiveSessionParameterState(updatedState, executionContext.Parameters)
 	liveAccountBinding := map[string]any{}
 	if account, accountErr := p.store.GetAccount(session.AccountID); accountErr == nil {
 		liveAccountBinding = cloneMetadata(resolveLiveBinding(account))
@@ -5467,6 +5475,7 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 		"pretouchShadowOverlayQualityMaxQuantity",
 		"pretouchShadowOverlayQualityCostThresholdATR",
 		"pretouchShadowOverlaySpeedThreshold",
+		pretouchShadowT3StructureModeParam,
 		"pretouchShadowOverlayMaxPreTouchSec",
 		"pretouchShadowOverlayMaxEff300s",
 		pretouchShadowT3StopGateEnabledParam,
@@ -5495,7 +5504,52 @@ func (p *Platform) resolveLiveSessionParameters(session domain.LiveSession, vers
 	}
 	parameters = applyCanonicalLiveSignalScope(parameters, resolveStrategySignalBindings(parameters))
 	parameters = applyLiveSafeStopDefaults(parameters)
+	parameters = applyPretouchEffectiveParameterDefaults(parameters, version)
 	return NormalizeBacktestParameters(parameters)
+}
+
+func applyPretouchEffectiveParameterDefaults(parameters map[string]any, version domain.StrategyVersion) map[string]any {
+	normalized := cloneMetadata(parameters)
+	if normalized == nil {
+		normalized = map[string]any{}
+	}
+	engineKey := normalizeStrategyEngineKey(stringValue(normalized["strategyEngine"]))
+	if version.StrategyID == bkLiveEthPretouchTimingStrategyID || engineKey == bkLiveEthPretouchTimingEngineKey {
+		mode := normalizePretouchT3StructureMode(firstNonEmpty(
+			stringValue(normalized[pretouchShadowT3StructureModeParam]),
+			defaultPretouchShadowT3StructureMode,
+		))
+		normalized[pretouchShadowT3StructureModeParam] = mode
+	}
+	return normalized
+}
+
+func applyEffectiveLiveSessionParameterState(state map[string]any, parameters map[string]any) map[string]any {
+	updated := cloneMetadata(state)
+	if updated == nil {
+		updated = map[string]any{}
+	}
+	engineKey := normalizeStrategyEngineKey(stringValue(parameters["strategyEngine"]))
+	if engineKey == bkLiveEthPretouchTimingEngineKey {
+		updated[pretouchShadowT3StructureModeParam] = normalizePretouchT3StructureMode(firstNonEmpty(
+			stringValue(parameters[pretouchShadowT3StructureModeParam]),
+			defaultPretouchShadowT3StructureMode,
+		))
+	}
+	return updated
+}
+
+func (p *Platform) withEffectiveLiveSessionParameterState(session domain.LiveSession) domain.LiveSession {
+	version, err := p.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		return session
+	}
+	parameters, err := p.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		return session
+	}
+	session.State = applyEffectiveLiveSessionParameterState(session.State, parameters)
+	return session
 }
 
 func liveExecutionParameterOverrideKeys() []string {
@@ -6090,6 +6144,9 @@ func normalizeLiveSessionOverrides(overrides map[string]any) map[string]any {
 		if value := strings.TrimSpace(stringValue(overrides[key])); value != "" {
 			normalized[key] = value
 		}
+	}
+	if value := strings.TrimSpace(stringValue(overrides[pretouchShadowT3StructureModeParam])); value != "" {
+		normalized[pretouchShadowT3StructureModeParam] = normalizePretouchT3StructureMode(value)
 	}
 	for _, key := range []string{
 		"pretouchBaseOrderQuantity",

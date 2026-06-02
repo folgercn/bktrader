@@ -296,6 +296,7 @@ func NewStore() *Store {
 			"pretouchShadowOverlayQualityMaxQuantity":      0.40,
 			"pretouchShadowOverlayQualityCostThresholdATR": 0.10,
 			"pretouchShadowOverlaySpeedThreshold":          0.35,
+			"pretouchShadowT3StructureMode":                "prev3_dominates",
 			"pretouchShadowSubmitRiskOnQuantity":           true,
 			"pretouchShadowSubmitOverlayOrder":             true,
 			"pretouchShadowStrict10CalendarPct":            35.521555,

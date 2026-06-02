@@ -83,6 +83,7 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 				FreshnessOverrideTradeTickFreshnessSecs   any    `json:"freshnessOverrideTradeTickFreshnessSeconds"`
 				FreshnessOverrideOrderBookFreshnessSecs   any    `json:"freshnessOverrideOrderBookFreshnessSeconds"`
 				FreshnessOverrideRuntimeQuietSecs         any    `json:"freshnessOverrideRuntimeQuietSeconds"`
+				PretouchShadowT3StructureMode             string `json:"pretouchShadowT3StructureMode"`
 			}
 			if err := decodeJSON(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -230,6 +231,9 @@ func registerLiveRoutes(mux *http.ServeMux, platform *service.Platform, cfg conf
 			}
 			if payload.DispatchCooldownSec > 0 {
 				overrides["dispatchCooldownSeconds"] = payload.DispatchCooldownSec
+			}
+			if payload.PretouchShadowT3StructureMode != "" {
+				overrides["pretouchShadowT3StructureMode"] = payload.PretouchShadowT3StructureMode
 			}
 
 			// 处理新鲜度覆盖

@@ -830,6 +830,44 @@ func TestPretouchTimingEngineReportsT3OverlaySpeedRejectMetadata(t *testing.T) {
 	}
 }
 
+func TestPretouchTimingEngineReportsT3OverlayNoLevelTouchMetadata(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+	ctx := testPretouchT3OverlaySignalContext(start, 100.0)
+	enablePretouchRiskOnShadow(&ctx, true)
+	setPretouchOrderBook(&ctx, 99.99, 100.0)
+
+	decision, err := engine.EvaluateSignal(ctx)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "no_level_touch" {
+		t.Fatalf("expected lead wait with T3 no-level metadata, got %#v", decision)
+	}
+	if !boolValue(decision.Metadata["t3OverlayRejected"]) {
+		t.Fatalf("expected t3OverlayRejected metadata, got %#v", decision.Metadata)
+	}
+	if got := stringValue(decision.Metadata["t3OverlayRejectCategory"]); got != "t3_no_level_touch" {
+		t.Fatalf("expected t3_no_level_touch reject category, got %s in %#v", got, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["t3OverlayLevel"]); got != 0 {
+		t.Fatalf("expected no selected touch level before price touch, got %v in %#v", got, decision.Metadata)
+	}
+	diagnostics := mapValue(decision.Metadata["t3OverlayDiagnostics"])
+	if diagnostics == nil {
+		t.Fatalf("expected T3 diagnostics metadata, got %#v", decision.Metadata)
+	}
+	if got := parseFloatValue(diagnostics["longLevel"]); math.Abs(got-106.0) > 1e-9 {
+		t.Fatalf("expected T3 long level 106, got %v in %#v", got, diagnostics)
+	}
+	if !boolValue(diagnostics["longStructureReady"]) || boolValue(diagnostics["longPriceTouched"]) {
+		t.Fatalf("expected long structure ready but not touched, got %#v", diagnostics)
+	}
+	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
+		t.Fatalf("expected rejected T3 overlay wait not to produce intent, got %#v", intent)
+	}
+}
+
 func TestPretouchTimingEngineSubmitsLeadFromSignalBarHighTouch(t *testing.T) {
 	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	engine := testPretouchTimingEngine("fast", 0.75)
@@ -985,6 +1023,15 @@ func TestPretouchTimingEngineLogsT3OverlayDetectorMissOncePerSignalBar(t *testin
 	}
 	if decision.Action != "wait" || decision.Reason != "no_level_touch" {
 		t.Fatalf("expected lead wait/no_level_touch to remain unchanged, got %#v", decision)
+	}
+	if !boolValue(decision.Metadata["t3OverlayRejected"]) {
+		t.Fatalf("expected t3OverlayRejected metadata, got %#v", decision.Metadata)
+	}
+	if got := stringValue(decision.Metadata["t3OverlayRejectCategory"]); got != "t3_pre_touch_seconds" {
+		t.Fatalf("expected t3_pre_touch_seconds metadata, got %s in %#v", got, decision.Metadata)
+	}
+	if got := parseFloatValue(decision.Metadata["t3OverlayPreTouchSeconds"]); math.Abs(got-60.0) > 1e-9 {
+		t.Fatalf("expected pre-touch seconds 60, got %v in %#v", got, decision.Metadata)
 	}
 	output := logs.String()
 	if !strings.Contains(output, "pretouch T3 overlay rejected") {
