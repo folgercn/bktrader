@@ -290,7 +290,11 @@ func (p *Platform) ListStrategySignalBindings(strategyID string) ([]domain.Accou
 }
 
 func (p *Platform) GetLiveSession(sessionID string) (domain.LiveSession, error) {
-	return p.store.GetLiveSession(sessionID)
+	session, err := p.store.GetLiveSession(sessionID)
+	if err != nil {
+		return domain.LiveSession{}, err
+	}
+	return p.withEffectiveLiveSessionParameterState(session), nil
 }
 
 // ListAccounts 获取所有账户列表。

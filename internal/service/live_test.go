@@ -1872,6 +1872,46 @@ func TestResolveLiveSessionParametersDefaultsMissingStopsToTrailingForLive(t *te
 	}
 }
 
+func TestResolveLiveSessionParametersDefaultsPretouchT3StructureMode(t *testing.T) {
+	platform := NewPlatform(memory.NewStore())
+
+	if _, err := platform.store.UpdateStrategyParameters(bkLiveEthPretouchTimingStrategyID, map[string]any{
+		"strategyEngine":      bkLiveEthPretouchTimingEngineKey,
+		"symbol":              "ETHUSDT",
+		"signalTimeframe":     "1h",
+		"executionDataSource": "tick",
+	}); err != nil {
+		t.Fatalf("update pretouch strategy parameters failed: %v", err)
+	}
+	session, err := platform.CreateLiveSession("", "live-main", bkLiveEthPretouchTimingStrategyID, nil)
+	if err != nil {
+		t.Fatalf("create live session failed: %v", err)
+	}
+	if _, ok := session.State[pretouchShadowT3StructureModeParam]; ok {
+		t.Fatalf("expected raw session state to omit %s before enrichment", pretouchShadowT3StructureModeParam)
+	}
+
+	version, err := platform.resolveCurrentStrategyVersion(session.StrategyID)
+	if err != nil {
+		t.Fatalf("resolve strategy version failed: %v", err)
+	}
+	parameters, err := platform.resolveLiveSessionParameters(session, version)
+	if err != nil {
+		t.Fatalf("resolve live session parameters failed: %v", err)
+	}
+	if got := stringValue(parameters[pretouchShadowT3StructureModeParam]); got != defaultPretouchShadowT3StructureMode {
+		t.Fatalf("expected %s=%s, got %s", pretouchShadowT3StructureModeParam, defaultPretouchShadowT3StructureMode, got)
+	}
+
+	enriched, err := platform.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("get live session failed: %v", err)
+	}
+	if got := stringValue(enriched.State[pretouchShadowT3StructureModeParam]); got != defaultPretouchShadowT3StructureMode {
+		t.Fatalf("expected enriched session %s=%s, got %s in %#v", pretouchShadowT3StructureModeParam, defaultPretouchShadowT3StructureMode, got, enriched.State)
+	}
+}
+
 func TestApplyLiveSafeStopDefaultsSkipsLegacyTrailingDefaultsForV4ExitContract(t *testing.T) {
 	parameters := applyLiveSafeStopDefaults(map[string]any{
 		"initial_stop_atr": 0.45,
@@ -4879,6 +4919,7 @@ func TestNormalizeLiveSessionOverridesIncludesPretouchExitContract(t *testing.T)
 func TestNormalizeLiveSessionOverridesIncludesPretouchT3StopGateContract(t *testing.T) {
 	overrides := normalizeLiveSessionOverrides(map[string]any{
 		pretouchShadowT3StopGateEnabledParam:                   true,
+		pretouchShadowT3StructureModeParam:                     "prev3_dominates",
 		pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        0.65,
 		pretouchShadowT3StopGateMinEff300sParam:                0.85,
 		pretouchShadowT3StopGateMinPreTouchSecondsParam:        250.0,
@@ -4889,6 +4930,9 @@ func TestNormalizeLiveSessionOverridesIncludesPretouchT3StopGateContract(t *test
 	})
 	if !boolValue(overrides[pretouchShadowT3StopGateEnabledParam]) {
 		t.Fatalf("expected %s=true, got %#v", pretouchShadowT3StopGateEnabledParam, overrides)
+	}
+	if got := stringValue(overrides[pretouchShadowT3StructureModeParam]); got != defaultPretouchShadowT3StructureMode {
+		t.Fatalf("expected %s=%s, got %s in %#v", pretouchShadowT3StructureModeParam, defaultPretouchShadowT3StructureMode, got, overrides)
 	}
 	for key, want := range map[string]float64{
 		pretouchShadowT3StopGateMinAbsSpeed300sATRParam:        0.65,

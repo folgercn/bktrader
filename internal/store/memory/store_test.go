@@ -7,6 +7,29 @@ import (
 	"github.com/wuyaocheng/bktrader/internal/domain"
 )
 
+func TestSeededPretouchStrategyIncludesT3StructureMode(t *testing.T) {
+	store := NewStore()
+
+	strategies, err := store.ListStrategies()
+	if err != nil {
+		t.Fatalf("list strategies failed: %v", err)
+	}
+	for _, strategy := range strategies {
+		if strategy["id"] != "strategy-bk-eth-pretouch-timing" {
+			continue
+		}
+		version, ok := strategy["currentVersion"].(domain.StrategyVersion)
+		if !ok {
+			t.Fatalf("expected currentVersion domain.StrategyVersion, got %#v", strategy["currentVersion"])
+		}
+		if got := version.Parameters["pretouchShadowT3StructureMode"]; got != "prev3_dominates" {
+			t.Fatalf("expected pretouchShadowT3StructureMode=prev3_dominates, got %#v", got)
+		}
+		return
+	}
+	t.Fatal("seeded pretouch timing strategy not found")
+}
+
 func TestSavePositionDeletesNonPositiveExistingPosition(t *testing.T) {
 	store := NewStore()
 

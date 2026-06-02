@@ -410,6 +410,30 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 	shortRelaxedReady := pretouchT3ShortStructureReadyPrev3Dominates(prevBar3.Low, prevBar2.Low, prevBar1.Low)
 	longReady := pretouchT3LongStructureReady(prevBar3.High, prevBar2.High, prevBar1.High, structureMode)
 	shortReady := pretouchT3ShortStructureReady(prevBar3.Low, prevBar2.Low, prevBar1.Low, structureMode)
+	baseDiagnostics := map[string]any{
+		"shape":               "t3_swing",
+		"atr":                 atr,
+		"signalBarStart":      formatOptionalRFC3339(d.currentBar.OpenTime),
+		"tickTime":            formatOptionalRFC3339(tick.Time),
+		"current":             pretouchBarSnapshot(d.currentBar),
+		"prevBar1":            pretouchBarSnapshot(&prevBar1),
+		"prevBar2":            pretouchBarSnapshot(&prevBar2),
+		"prevBar3":            pretouchBarSnapshot(&prevBar3),
+		"structureMode":       structureMode,
+		"longLevel":           prevBar3.High,
+		"shortLevel":          prevBar3.Low,
+		"longStructureReady":  longReady,
+		"shortStructureReady": shortReady,
+		"longStrictReady":     longStrictReady,
+		"shortStrictReady":    shortStrictReady,
+		"longRelaxedReady":    longRelaxedReady,
+		"shortRelaxedReady":   shortRelaxedReady,
+		"longPriceTouched":    tick.Price >= prevBar3.High || d.currentBar.High >= prevBar3.High,
+		"shortPriceTouched":   tick.Price <= prevBar3.Low || d.currentBar.Low <= prevBar3.Low,
+		"tickPrice":           tick.Price,
+		"currentHigh":         d.currentBar.High,
+		"currentLow":          d.currentBar.Low,
+	}
 	if tick.Price >= prevBar3.High && longReady {
 		side = "long"
 		level = prevBar3.High
@@ -427,12 +451,21 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 		level = prevBar3.Low
 		touchPrice = d.currentBar.Low
 	} else {
-		return PretouchDetectionResult{Reason: "t3_no_level_touch"}
+		return PretouchDetectionResult{
+			Reason:      "t3_no_level_touch",
+			Diagnostics: baseDiagnostics,
+		}
 	}
 
 	touchTime := tick.Time
 	signalBarStart := d.currentBar.OpenTime
-	diagnostics := map[string]any{
+	diagnostics := cloneMetadata(baseDiagnostics)
+	diagnostics["side"] = side
+	diagnostics["level"] = level
+	diagnostics["touchPrice"] = touchPrice
+	diagnostics["strictWouldTrigger"] = (side == "long" && longStrictReady) || (side == "short" && shortStrictReady)
+	diagnostics["relaxedWouldTrigger"] = (side == "long" && longRelaxedReady) || (side == "short" && shortRelaxedReady)
+	for key, value := range map[string]any{
 		"shape":                  "t3_swing",
 		"side":                   side,
 		"level":                  level,
@@ -457,6 +490,8 @@ func (d *PretouchEventDetector) OnTickT3Overlay(tick TickData) PretouchDetection
 		"minAbsSpeed300sATR":     d.config.MinSpeed300sATR,
 		"maxEff300s":             d.config.MaxEff300s,
 		"roundtripCostThreshold": d.config.CostQ50Threshold,
+	} {
+		diagnostics[key] = value
 	}
 	preTouchSeconds := touchTime.Sub(signalBarStart).Seconds()
 	diagnostics["preTouchSeconds"] = preTouchSeconds
