@@ -897,6 +897,19 @@ func TestPretouchTimingEngineReportsT3OverlayNoLevelTouchMetadata(t *testing.T) 
 	if got := parseFloatValue(decision.Metadata["t3OverlayLevel"]); got != 0 {
 		t.Fatalf("expected no selected touch level before price touch, got %v in %#v", got, decision.Metadata)
 	}
+	if got := stringValue(decision.Metadata["pretouchLeadRejectReason"]); got != "no_level_touch" {
+		t.Fatalf("expected lead reject reason to be preserved, got %s in %#v", got, decision.Metadata)
+	}
+	leadDiagnostics := mapValue(decision.Metadata["pretouchLeadDiagnostics"])
+	if leadDiagnostics == nil {
+		t.Fatalf("expected lead diagnostics metadata, got %#v", decision.Metadata)
+	}
+	if got := parseFloatValue(leadDiagnostics["longLevel"]); math.Abs(got-103.0) > 1e-9 {
+		t.Fatalf("expected T2 long level 103, got %v in %#v", got, leadDiagnostics)
+	}
+	if boolValue(leadDiagnostics["longStructureReady"]) || boolValue(leadDiagnostics["longPriceTouched"]) {
+		t.Fatalf("expected T2 long structure and touch to be false, got %#v", leadDiagnostics)
+	}
 	diagnostics := mapValue(decision.Metadata["t3OverlayDiagnostics"])
 	if diagnostics == nil {
 		t.Fatalf("expected T3 diagnostics metadata, got %#v", decision.Metadata)

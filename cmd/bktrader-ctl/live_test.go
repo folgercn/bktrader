@@ -1,9 +1,38 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestBuildLiveSessionDetailPathUsesDefaultFields(t *testing.T) {
+	path := buildLiveSessionDetailPath("live/session 1", "")
+	if !strings.HasPrefix(path, "/api/v1/live/sessions/live%2Fsession%201/detail?") {
+		t.Fatalf("expected escaped live session detail path, got %s", path)
+	}
+	for _, field := range []string{
+		"timeline",
+		"breakoutHistory",
+		"lastStrategyEvaluationSignalBarStates",
+		"lastStrategyDecision",
+		"lastExecutionDispatch",
+	} {
+		if !strings.Contains(path, field) {
+			t.Fatalf("expected default detail field %s in path %s", field, path)
+		}
+	}
+}
+
+func TestBuildLiveSessionDetailPathAllowsCustomFields(t *testing.T) {
+	path := buildLiveSessionDetailPath("live-1", "timeline,lastStrategyDecision")
+	if !strings.Contains(path, "fields=timeline%2ClastStrategyDecision") {
+		t.Fatalf("expected custom fields query, got %s", path)
+	}
+	if strings.Contains(path, "lastExecutionDispatch") {
+		t.Fatalf("expected custom fields to override defaults, got %s", path)
+	}
+}
 
 func TestBuildLiveSessionControlStatusPendingDuration(t *testing.T) {
 	now := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
