@@ -942,6 +942,10 @@ func (p *Platform) recordLiveDispatchPreflightRejection(session domain.LiveSessi
 }
 
 func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain.Order, error) {
+	return p.dispatchLiveSessionIntentWithProposalSnapshot(session, nil)
+}
+
+func (p *Platform) dispatchLiveSessionIntentWithProposalSnapshot(session domain.LiveSession, proposalSnapshot map[string]any) (domain.Order, error) {
 	releaseDispatch := p.lockLiveSessionDispatch(session.ID)
 	defer releaseDispatch()
 	if latestSession, latestErr := p.store.GetLiveSession(session.ID); latestErr == nil {
@@ -960,6 +964,9 @@ func (p *Platform) dispatchLiveSessionIntent(session domain.LiveSession) (domain
 	}
 
 	proposalMap := cloneMetadata(mapValue(firstNonEmptyMapValue(session.State["lastExecutionProposal"], session.State["lastStrategyIntent"])))
+	if len(proposalMap) == 0 && len(proposalSnapshot) > 0 {
+		proposalMap = cloneMetadata(proposalSnapshot)
+	}
 	if len(proposalMap) == 0 {
 		return domain.Order{}, fmt.Errorf("live session %s has no execution proposal", session.ID)
 	}

@@ -259,17 +259,27 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 
 	// Process tick through detector
 	result := e.detector.OnTick(tick)
+	leadMissDiagnostics := pretouchLeadMissDiagnostics(ctx, tick, closedBars, currentBar, config, result.Reason)
 
 	if !result.Detected {
 		if strings.EqualFold(result.Reason, "already_touched_this_bar") {
 			if metadata := e.pretouchLeadAlreadyTouchedMetadata(ctx, currentBar); len(metadata) > 0 {
+				if len(leadMissDiagnostics) > 0 {
+					metadata["pretouchLeadDiagnostics"] = leadMissDiagnostics
+				}
 				return StrategySignalDecision{Action: "wait", Reason: result.Reason, Metadata: metadata}, nil
 			}
 		}
-		if decision, handled := e.evaluateT3ShadowOverlay(ctx, tick, closedBars, currentBar, orderBookStats, result.Reason); handled {
+		if decision, handled := e.evaluateT3ShadowOverlay(ctx, tick, closedBars, currentBar, orderBookStats, result.Reason, leadMissDiagnostics); handled {
 			return decision, nil
 		}
-		return StrategySignalDecision{Action: "wait", Reason: result.Reason}, nil
+		metadata := map[string]any{}
+		if len(leadMissDiagnostics) > 0 {
+			metadata["pretouchLeadDiagnostics"] = leadMissDiagnostics
+			metadata["pretouchLeadRejectReason"] = result.Reason
+			metadata["pretouchLeadRejectCategory"] = pretouchLeadMissReasonCategory(result.Reason)
+		}
+		return StrategySignalDecision{Action: "wait", Reason: result.Reason, Metadata: metadata}, nil
 	}
 
 	// --- Pretouch event detected! Do Go-native ML inference ---
@@ -740,7 +750,7 @@ func nextPretouchSide(eventSide string) string {
 	return "BUY"
 }
 
-func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySignalEvaluationContext, tick TickData, closedBars []HourlyBar, currentBar *HourlyBar, orderBookStats orderBookDecisionStats, leadMissReason string) (StrategySignalDecision, bool) {
+func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySignalEvaluationContext, tick TickData, closedBars []HourlyBar, currentBar *HourlyBar, orderBookStats orderBookDecisionStats, leadMissReason string, leadDiagnostics map[string]any) (StrategySignalDecision, bool) {
 	if e.t3Detector == nil || !strings.EqualFold(stringValue(ctx.ExecutionContext.Parameters["pretouchShadowMode"]), pretouchShadowModeTestnetCollect) {
 		return StrategySignalDecision{}, false
 	}
@@ -750,7 +760,7 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	result := e.t3Detector.OnTickT3Overlay(tick)
 	if !result.Detected {
 		e.logT3ShadowOverlayMiss(ctx, tick, leadMissReason, result)
-		if metadata := pretouchT3OverlayRejectMetadata(leadMissReason, result); len(metadata) > 0 {
+		if metadata := pretouchT3OverlayRejectMetadata(leadMissReason, result, leadDiagnostics); len(metadata) > 0 {
 			return StrategySignalDecision{
 				Action:   "wait",
 				Reason:   leadMissReason,
@@ -889,6 +899,54 @@ func (e *bkLiveEthPretouchTimingEngine) evaluateT3ShadowOverlay(ctx StrategySign
 	}, true
 }
 
+func pretouchLeadMissDiagnostics(ctx StrategySignalEvaluationContext, tick TickData, closedBars []HourlyBar, currentBar *HourlyBar, config PretouchDetectorConfig, reason string) map[string]any {
+	diagnostics := map[string]any{
+		"reason":         reason,
+		"rejectCategory": pretouchLeadMissReasonCategory(reason),
+		"shape":          "t2_prev2_breakout",
+		"tickTime":       formatOptionalRFC3339(tick.Time),
+		"tickPrice":      tick.Price,
+		"signalBarStart": formatOptionalRFC3339(ctx.EventTime.Truncate(time.Hour)),
+	}
+	if currentBar != nil {
+		diagnostics["current"] = pretouchBarSnapshot(currentBar)
+		diagnostics["signalBarStart"] = formatOptionalRFC3339(currentBar.OpenTime)
+		diagnostics["currentHigh"] = currentBar.High
+		diagnostics["currentLow"] = currentBar.Low
+	}
+	if len(closedBars) >= 1 {
+		prevBar1 := closedBars[len(closedBars)-1]
+		diagnostics["prevBar1"] = pretouchBarSnapshot(&prevBar1)
+	}
+	if len(closedBars) < 2 {
+		return diagnostics
+	}
+	prevBar1 := closedBars[len(closedBars)-1]
+	prevBar2 := closedBars[len(closedBars)-2]
+	diagnostics["prevBar2"] = pretouchBarSnapshot(&prevBar2)
+	longLevel := prevBar2.High
+	shortLevel := prevBar2.Low
+	longStructureReady := pretouchLongStructureReady(prevBar2.High, prevBar1.High, config.StructureToleranceBps)
+	shortStructureReady := pretouchShortStructureReady(prevBar2.Low, prevBar1.Low, config.StructureToleranceBps)
+	currentHigh := tick.Price
+	currentLow := tick.Price
+	if currentBar != nil {
+		currentHigh = currentBar.High
+		currentLow = currentBar.Low
+	}
+	longPriceTouched := currentHigh >= longLevel || tick.Price >= longLevel
+	shortPriceTouched := currentLow <= shortLevel || tick.Price <= shortLevel
+	diagnostics["longLevel"] = longLevel
+	diagnostics["shortLevel"] = shortLevel
+	diagnostics["longStructureReady"] = longStructureReady
+	diagnostics["shortStructureReady"] = shortStructureReady
+	diagnostics["longPriceTouched"] = longPriceTouched
+	diagnostics["shortPriceTouched"] = shortPriceTouched
+	diagnostics["longWouldTrigger"] = longStructureReady && longPriceTouched
+	diagnostics["shortWouldTrigger"] = shortStructureReady && shortPriceTouched
+	return diagnostics
+}
+
 func (e *bkLiveEthPretouchTimingEngine) logT3ShadowOverlayMiss(ctx StrategySignalEvaluationContext, tick TickData, leadMissReason string, result PretouchDetectionResult) {
 	if e == nil || e.platform == nil || !pretouchT3OverlayMissLoggable(result.Reason) {
 		return
@@ -933,16 +991,18 @@ func (e *bkLiveEthPretouchTimingEngine) logT3ShadowOverlayMiss(ctx StrategySigna
 	)
 }
 
-func pretouchT3OverlayRejectMetadata(leadMissReason string, result PretouchDetectionResult) map[string]any {
+func pretouchT3OverlayRejectMetadata(leadMissReason string, result PretouchDetectionResult, leadDiagnostics map[string]any) map[string]any {
 	if len(result.Diagnostics) == 0 || !pretouchT3OverlayMissLoggable(result.Reason) {
 		return nil
 	}
 	diagnostics := cloneMetadata(result.Diagnostics)
 	category := pretouchT3OverlayMissReasonCategory(result.Reason)
-	return map[string]any{
+	metadata := map[string]any{
 		"signalSource":                 "pretouch-t3-overlay-shadow",
 		"signalKind":                   "entry-t3-overlay-watch",
 		"decisionState":                "rejected",
+		"pretouchLeadRejectReason":     leadMissReason,
+		"pretouchLeadRejectCategory":   pretouchLeadMissReasonCategory(leadMissReason),
 		"t3OverlayRejected":            true,
 		"t3OverlayLeadMissReason":      leadMissReason,
 		"t3OverlayRejectReason":        result.Reason,
@@ -969,6 +1029,10 @@ func pretouchT3OverlayRejectMetadata(leadMissReason string, result PretouchDetec
 		"t3OverlayRelaxedWouldTrigger": boolValue(diagnostics["relaxedWouldTrigger"]),
 		"t3OverlayDiagnostics":         diagnostics,
 	}
+	if len(leadDiagnostics) > 0 {
+		metadata["pretouchLeadDiagnostics"] = cloneMetadata(leadDiagnostics)
+	}
+	return metadata
 }
 
 func (e *bkLiveEthPretouchTimingEngine) shouldLogT3ShadowOverlayMiss(key string) bool {
@@ -1002,6 +1066,20 @@ func pretouchT3OverlayMissReasonCategory(reason string) string {
 		return "t3_speed_300s"
 	case strings.HasPrefix(reason, "t3_eff_300s="):
 		return "t3_eff_300s"
+	default:
+		return reason
+	}
+}
+
+func pretouchLeadMissReasonCategory(reason string) string {
+	reason = strings.TrimSpace(reason)
+	switch {
+	case strings.HasPrefix(reason, "pre_touch_seconds="):
+		return "pre_touch_seconds"
+	case strings.HasPrefix(reason, "speed_300s="):
+		return "speed_300s"
+	case strings.HasPrefix(reason, "eff_300s="):
+		return "eff_300s"
 	default:
 		return reason
 	}

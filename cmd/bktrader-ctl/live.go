@@ -54,11 +54,24 @@ var liveGetCmd = &cobra.Command{
 	Short: "查看实盘会话详情 [IDEMPOTENT]",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fields, _ := cmd.Flags().GetString("fields")
 		client := getClient()
-		resp, err := client.Request("GET", "/api/v1/live/sessions/"+url.PathEscape(args[0])+"/detail", nil)
+		resp, err := client.Request("GET", buildLiveSessionDetailPath(args[0], fields), nil)
 		handleResponse(resp, err)
 		return nil
 	},
+}
+
+const defaultLiveSessionDetailFields = "timeline,breakoutHistory,lastStrategyEvaluationSignalBarStates,lastStrategyEvaluationSourceStates,signalRuntimePlan,lastStrategyDecision,lastDispatchedIntent,lastExecutionDispatch,lastExecutionTelemetry"
+
+func buildLiveSessionDetailPath(sessionID, fields string) string {
+	resolvedFields := strings.TrimSpace(fields)
+	if resolvedFields == "" {
+		resolvedFields = defaultLiveSessionDetailFields
+	}
+	v := url.Values{}
+	v.Set("fields", resolvedFields)
+	return "/api/v1/live/sessions/" + url.PathEscape(sessionID) + "/detail?" + v.Encode()
 }
 
 var liveControlStatusCmd = &cobra.Command{
@@ -279,6 +292,7 @@ func init() {
 	liveTemplateCmd.AddCommand(liveTemplateListCmd)
 
 	liveListCmd.Flags().String("view", "", "视图类型 (e.g. summary)")
+	liveGetCmd.Flags().String("fields", "", "详情字段 CSV；默认包含 timeline/breakout/strategy/execution 诊断字段")
 	liveControlStatusCmd.Flags().Bool("only-pending", false, "只显示尚未收敛的控制请求")
 	liveControlStatusCmd.Flags().Bool("only-error", false, "只显示 actualStatus=ERROR 或存在控制错误的会话")
 	liveControlResetCmd.Flags().Bool("confirm", false, "确认执行控制状态重置")

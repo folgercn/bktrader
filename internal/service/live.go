@@ -4066,7 +4066,7 @@ func (p *Platform) evaluateLiveSessionOnSignal(session domain.LiveSession, runti
 	if !shouldAutoDispatchLiveIntent(updatedSession, dispatchIntent, eventTime) {
 		return nil
 	}
-	if _, err := p.dispatchLiveSessionIntent(updatedSession); err != nil {
+	if _, err := p.dispatchLiveSessionIntentWithProposalSnapshot(updatedSession, dispatchIntent); err != nil {
 		latestSession, latestErr := p.store.GetLiveSession(updatedSession.ID)
 		if latestErr == nil {
 			state = cloneMetadata(latestSession.State)

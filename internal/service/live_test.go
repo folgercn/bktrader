@@ -3841,6 +3841,93 @@ func TestDispatchLiveSessionIntentReloadsLatestStateBeforeDispatch(t *testing.T)
 	}
 }
 
+func TestAutoDispatchUsesEvaluationProposalSnapshotWhenLatestWaitClearsProposal(t *testing.T) {
+	platform, session, runtimeSessionID, _, _ := prepareLiveDecisionTelemetryFixture(t)
+	platform.registerLiveAdapter(testLiveAccountSyncAdapter{key: "test-auto-dispatch-snapshot"})
+
+	account, err := platform.store.GetAccount("live-main")
+	if err != nil {
+		t.Fatalf("get account failed: %v", err)
+	}
+	account.Status = "READY"
+	account.Metadata = cloneMetadata(account.Metadata)
+	account.Metadata["liveBinding"] = map[string]any{
+		"adapterKey":     "test-auto-dispatch-snapshot",
+		"connectionMode": "mock",
+		"executionMode":  "mock",
+	}
+	if _, err := platform.store.UpdateAccount(account); err != nil {
+		t.Fatalf("update account failed: %v", err)
+	}
+	freshAt := time.Now().UTC()
+	if err := platform.updateSignalRuntimeSessionState(runtimeSessionID, func(runtimeSession *domain.SignalRuntimeSession) {
+		runtimeSession.Status = "RUNNING"
+		state := cloneMetadata(runtimeSession.State)
+		state["lastEventAt"] = freshAt.Format(time.RFC3339Nano)
+		state["lastHeartbeatAt"] = freshAt.Format(time.RFC3339Nano)
+		sourceStates := cloneMetadata(mapValue(state["sourceStates"]))
+		for key, value := range sourceStates {
+			source := cloneMetadata(mapValue(value))
+			source["lastEventAt"] = freshAt.Format(time.RFC3339Nano)
+			sourceStates[key] = source
+		}
+		state["sourceStates"] = sourceStates
+		runtimeSession.State = state
+		runtimeSession.UpdatedAt = freshAt
+	}); err != nil {
+		t.Fatalf("refresh runtime state failed: %v", err)
+	}
+
+	proposal := executionProposalToMap(ExecutionProposal{
+		Action:            "entry",
+		Role:              "entry",
+		Reason:            "Pretouch-Timing",
+		Side:              "BUY",
+		Symbol:            "BTCUSDT",
+		Type:              "MARKET",
+		Quantity:          0.001,
+		PriceHint:         75600.0,
+		SignalKind:        "entry",
+		DecisionState:     "ready",
+		SignalBarStateKey: "BTCUSDT|1h|2026-06-03T05:00:00Z",
+		ExecutionStrategy: "book-aware-v1",
+		Status:            "dispatchable",
+		Metadata: map[string]any{
+			"executionDecision":             "direct-dispatch",
+			"executionMode":                 "live",
+			liveSignalBarTradeLimitKeyField: "BTCUSDT|1h|2026-06-03T05:00:00Z",
+		},
+	})
+	proposal = setExecutionProposalDecisionEventID(proposal, "strategy-decision-event-auto-dispatch-snapshot")
+
+	latestState := cloneMetadata(session.State)
+	delete(latestState, "lastExecutionProposal")
+	delete(latestState, "lastStrategyIntent")
+	latestState["lastStrategyDecision"] = map[string]any{
+		"action": "wait",
+		"reason": "already_touched_this_bar",
+	}
+	session, err = platform.store.UpdateLiveSessionState(session.ID, latestState)
+	if err != nil {
+		t.Fatalf("update latest session state failed: %v", err)
+	}
+
+	order, err := platform.dispatchLiveSessionIntentWithProposalSnapshot(session, proposal)
+	if err != nil {
+		t.Fatalf("expected auto dispatch snapshot to create order, got %v", err)
+	}
+	if order.ID == "" {
+		t.Fatalf("expected order id, got %+v", order)
+	}
+	updated, err := platform.store.GetLiveSession(session.ID)
+	if err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if got := stringValue(updated.State["lastDispatchedDecisionEventId"]); got != "strategy-decision-event-auto-dispatch-snapshot" {
+		t.Fatalf("expected dispatched decision event id from snapshot, got %s", got)
+	}
+}
+
 func TestValidateLiveDispatchIdempotencyRejectsPreviouslyDispatchedDecisionEvent(t *testing.T) {
 	state := map[string]any{
 		"lastDispatchedDecisionEventId": "strategy-decision-event-1",
