@@ -92,6 +92,9 @@ type bkLiveEthPretouchTimingEngine struct {
 
 	leadDelayMu      sync.Mutex
 	leadDelayPending *pretouchLeadDelayPending
+
+	leadTouchMu        sync.Mutex
+	lastLeadFirstTouch pretouchLeadFirstTouchState
 }
 
 type pretouchLeadDelayPending struct {
@@ -105,6 +108,11 @@ type pretouchLeadDelayPending struct {
 	TargetATR      float64
 	ReferencePrice float64
 	TargetPrice    float64
+}
+
+type pretouchLeadFirstTouchState struct {
+	SignalBarKey string
+	Metadata     map[string]any
 }
 
 func newBkLiveEthPretouchTimingEngine(platform *Platform) *bkLiveEthPretouchTimingEngine {
@@ -253,6 +261,11 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	result := e.detector.OnTick(tick)
 
 	if !result.Detected {
+		if strings.EqualFold(result.Reason, "already_touched_this_bar") {
+			if metadata := e.pretouchLeadAlreadyTouchedMetadata(ctx, currentBar); len(metadata) > 0 {
+				return StrategySignalDecision{Action: "wait", Reason: result.Reason, Metadata: metadata}, nil
+			}
+		}
 		if decision, handled := e.evaluateT3ShadowOverlay(ctx, tick, closedBars, currentBar, orderBookStats, result.Reason); handled {
 			return decision, nil
 		}
@@ -260,6 +273,7 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 	}
 
 	// --- Pretouch event detected! Do Go-native ML inference ---
+	signalBarTradeLimitKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
 	logger.Info("pretouch event detected",
 		"event_id", result.Event.EventID,
 		"side", result.Event.Side,
@@ -274,12 +288,15 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 		logger.Warn("no model loaded, skipping event",
 			"event_id", result.Event.EventID,
 		)
+		firstTouch := e.recordPretouchLeadFirstTouch(result.Event, signalBarTradeLimitKey, "wait", "no_model_loaded", "", nil)
 		return StrategySignalDecision{
 			Action: "wait",
 			Reason: "no_model_loaded",
 			Metadata: map[string]any{
-				"pretouchEvent":      result.Event.EventID,
-				"detectedButSkipped": true,
+				"pretouchEvent":            result.Event.EventID,
+				"detectedButSkipped":       true,
+				"pretouchLeadFirstTouch":   firstTouch,
+				"pretouchLeadTouchOutcome": "no_model_loaded",
 			},
 		}, nil
 	}
@@ -320,20 +337,23 @@ func (e *bkLiveEthPretouchTimingEngine) EvaluateSignal(ctx StrategySignalEvaluat
 			"event_id", result.Event.EventID,
 			"probability", rfProb,
 		)
+		firstTouch := e.recordPretouchLeadFirstTouch(result.Event, signalBarTradeLimitKey, "wait", "timing_skip", leadModel.Version, nil)
 		return StrategySignalDecision{
 			Action: "wait",
 			Reason: "timing_skip",
 			Metadata: map[string]any{
-				"pretouchEvent": result.Event.EventID,
-				"timingRegime":  "skip",
-				"rfProbability": rfProb,
-				"modelVersion":  leadModel.Version,
+				"pretouchEvent":            result.Event.EventID,
+				"timingRegime":             "skip",
+				"rfProbability":            rfProb,
+				"modelVersion":             leadModel.Version,
+				"pretouchLeadFirstTouch":   firstTouch,
+				"pretouchLeadTouchOutcome": "timing_skip",
 			},
 		}, nil
 	}
 
 	if e.shouldArmPretouchLeadDelay(ctx, result.Event, timingRegime) {
-		return e.armPretouchLeadDelay(ctx, result.Event, leadModel.Version, currentBar), nil
+		return e.armPretouchLeadDelay(ctx, result.Event, leadModel.Version, currentBar, signalBarTradeLimitKey), nil
 	}
 
 	return e.buildPretouchLeadAdvanceDecision(ctx, result.Event, leadModel.Version, closedBars, currentBar, orderBookStats, triggerPrice, nil), nil
@@ -350,11 +370,14 @@ func (e *bkLiveEthPretouchTimingEngine) shouldArmPretouchLeadDelay(ctx StrategyS
 	return submitContext.liveExecution && submitContext.sandbox && strings.EqualFold(submitContext.executionMode, "rest")
 }
 
-func (e *bkLiveEthPretouchTimingEngine) armPretouchLeadDelay(ctx StrategySignalEvaluationContext, event domain.PretouchEvent, modelVersion string, currentBar *HourlyBar) StrategySignalDecision {
+func (e *bkLiveEthPretouchTimingEngine) armPretouchLeadDelay(ctx StrategySignalEvaluationContext, event domain.PretouchEvent, modelVersion string, currentBar *HourlyBar, signalBarKey string) StrategySignalDecision {
+	if signalBarKey == "" {
+		signalBarKey = pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
+	}
 	pending := pretouchLeadDelayPending{
 		Event:         event,
 		ModelVersion:  modelVersion,
-		SignalBarKey:  pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar),
+		SignalBarKey:  signalBarKey,
 		SelectedDelay: "pullback",
 		ArmedAt:       ctx.EventTime,
 		ReadyAt:       event.TouchTime.Add(5 * time.Second),
@@ -365,19 +388,23 @@ func (e *bkLiveEthPretouchTimingEngine) armPretouchLeadDelay(ctx StrategySignalE
 	e.leadDelayPending = &pending
 	e.leadDelayMu.Unlock()
 
+	delayMetadata := pending.metadata("armed")
+	firstTouch := e.recordPretouchLeadFirstTouch(event, signalBarKey, "wait", "pretouch_delay_policy_armed", modelVersion, delayMetadata)
 	return StrategySignalDecision{
 		Action: "wait",
 		Reason: "pretouch_delay_policy_armed",
 		Metadata: map[string]any{
-			"pretouchEvent":       event,
-			"timingRegime":        event.TimingRegime,
-			"rfProbability":       event.RFProbability,
-			"modelVersion":        modelVersion,
-			"selectedDelay":       pending.SelectedDelay,
-			"pretouchDelayPolicy": pending.metadata("armed"),
-			"signalSource":        "pretouch-timing-unified",
-			"decisionState":       "waiting",
-			"signalKind":          "entry-delay-watch",
+			"pretouchEvent":            event,
+			"timingRegime":             event.TimingRegime,
+			"rfProbability":            event.RFProbability,
+			"modelVersion":             modelVersion,
+			"selectedDelay":            pending.SelectedDelay,
+			"pretouchDelayPolicy":      delayMetadata,
+			"pretouchLeadFirstTouch":   firstTouch,
+			"pretouchLeadTouchOutcome": "pretouch_delay_policy_armed",
+			"signalSource":             "pretouch-timing-unified",
+			"decisionState":            "waiting",
+			"signalKind":               "entry-delay-watch",
 		},
 	}
 }
@@ -617,12 +644,93 @@ func (e *bkLiveEthPretouchTimingEngine) buildPretouchLeadAdvanceDecision(ctx Str
 		metadata["pretouchDelayPolicy"] = delayMetadata
 		metadata["selectedDelay"] = stringValue(delayMetadata["selectedDelay"])
 	}
+	firstTouchReason := fmt.Sprintf("pretouch_%s_%s", timingRegime, event.Side)
+	if delayMetadata != nil {
+		firstTouchReason = "pretouch_delay_policy_" + firstNonEmpty(stringValue(delayMetadata["status"]), "resolved")
+	}
+	firstTouch := e.recordPretouchLeadFirstTouch(event, signalBarTradeLimitKey, "advance-plan", firstTouchReason, modelVersion, delayMetadata)
+	metadata["pretouchLeadFirstTouch"] = firstTouch
+	metadata["pretouchLeadTouchOutcome"] = firstTouchReason
 
 	return StrategySignalDecision{
 		Action:   "advance-plan",
 		Reason:   fmt.Sprintf("pretouch_%s_%s", timingRegime, event.Side),
 		Metadata: metadata,
 	}
+}
+
+func (e *bkLiveEthPretouchTimingEngine) recordPretouchLeadFirstTouch(event domain.PretouchEvent, signalBarKey, action, reason, modelVersion string, delayMetadata map[string]any) map[string]any {
+	metadata := pretouchLeadFirstTouchMetadata(event, signalBarKey, action, reason, modelVersion, delayMetadata)
+	if e == nil || signalBarKey == "" {
+		return metadata
+	}
+	e.leadTouchMu.Lock()
+	e.lastLeadFirstTouch = pretouchLeadFirstTouchState{
+		SignalBarKey: signalBarKey,
+		Metadata:     cloneMetadata(metadata),
+	}
+	e.leadTouchMu.Unlock()
+	return metadata
+}
+
+func (e *bkLiveEthPretouchTimingEngine) pretouchLeadAlreadyTouchedMetadata(ctx StrategySignalEvaluationContext, currentBar *HourlyBar) map[string]any {
+	if e == nil {
+		return nil
+	}
+	signalBarKey := pretouchSignalBarTradeLimitKey(ctx.ExecutionContext.Symbol, "1h", currentBar)
+	e.leadTouchMu.Lock()
+	state := e.lastLeadFirstTouch
+	e.leadTouchMu.Unlock()
+	if signalBarKey == "" || state.SignalBarKey == "" || state.SignalBarKey != signalBarKey || len(state.Metadata) == 0 {
+		return nil
+	}
+	firstTouch := cloneMetadata(state.Metadata)
+	return map[string]any{
+		"decisionState":                 "rejected",
+		"signalKind":                    "entry-watch",
+		"signalSource":                  "pretouch-timing-unified",
+		"signalBarStateKey":             signalBarKey,
+		liveSignalBarTradeLimitKeyField: signalBarKey,
+		"pretouchLeadFirstTouch":        firstTouch,
+		"pretouchLeadTouchOutcome":      stringValue(firstTouch["outcomeReason"]),
+		"pretouchLeadAlreadyTouched":    true,
+		"t3OverlaySkippedReason":        "lead_already_touched_this_bar",
+		"t3OverlayRejected":             true,
+		"t3OverlayRejectReason":         "lead_already_touched_this_bar",
+		"t3OverlayRejectCategory":       "lead_already_touched_this_bar",
+	}
+}
+
+func pretouchLeadFirstTouchMetadata(event domain.PretouchEvent, signalBarKey, action, reason, modelVersion string, delayMetadata map[string]any) map[string]any {
+	metadata := map[string]any{
+		"eventId":           event.EventID,
+		"symbol":            event.Symbol,
+		"side":              event.Side,
+		"nextSide":          nextPretouchSide(event.Side),
+		"touchTime":         formatOptionalRFC3339(event.TouchTime),
+		"signalBarStart":    formatOptionalRFC3339(event.SignalBarStart),
+		"signalBarStateKey": signalBarKey,
+		"touchPrice":        event.TouchPrice,
+		"level":             event.Level,
+		"atr":               event.ATR,
+		"preTouchSeconds":   event.PreTouchSeconds,
+		"speed300sATR":      event.Speed300sATR,
+		"eff300s":           event.Eff300s,
+		"roundtripCostATR":  event.RoundtripCostATR,
+		"touchExtensionATR": event.TouchExtensionATR,
+		"timingRegime":      normalizePretouchTimingRegime(event.TimingRegime),
+		"rfProbability":     event.RFProbability,
+		"sizingMultiplier":  event.SizingMultiplier,
+		"costPenalty":       event.CostPenalty,
+		"finalPositionSize": event.FinalPositionSize,
+		"modelVersion":      modelVersion,
+		"outcomeAction":     action,
+		"outcomeReason":     reason,
+	}
+	if delayMetadata != nil {
+		metadata["pretouchDelayPolicy"] = cloneMetadata(delayMetadata)
+	}
+	return metadata
 }
 
 func nextPretouchSide(eventSide string) string {

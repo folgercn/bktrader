@@ -43,6 +43,13 @@ func TestPretouchTimingEngineAdvancePlanProducesLiveIntentMetadata(t *testing.T)
 	if got := parseFloatValue(decision.Metadata["suggestedQuantity"]); math.Abs(got-0.12) > 1e-9 {
 		t.Fatalf("expected suggested quantity 0.12, got %v", got)
 	}
+	firstTouch := mapValue(decision.Metadata["pretouchLeadFirstTouch"])
+	if got := stringValue(firstTouch["outcomeReason"]); got != "pretouch_fast_long" {
+		t.Fatalf("expected first touch outcome pretouch_fast_long, got %s in %#v", got, firstTouch)
+	}
+	if got := stringValue(firstTouch["signalBarStateKey"]); got != "ETHUSDT|1h|2026-05-15T12:00:00Z" {
+		t.Fatalf("expected first touch signal bar key, got %s in %#v", got, firstTouch)
+	}
 
 	intent := deriveLiveSignalIntent(decision, "ETHUSDT")
 	if intent == nil {
@@ -198,6 +205,43 @@ func TestPretouchTimingEngineArmsSlowPullbackDelayForSandboxShadow(t *testing.T)
 	}
 	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
 		t.Fatalf("expected no live intent while slow delay is armed, got %#v", intent)
+	}
+	firstTouch := mapValue(decision.Metadata["pretouchLeadFirstTouch"])
+	if got := stringValue(firstTouch["outcomeReason"]); got != "pretouch_delay_policy_armed" {
+		t.Fatalf("expected first touch delay armed outcome, got %s in %#v", got, firstTouch)
+	}
+	if policy := mapValue(firstTouch["pretouchDelayPolicy"]); stringValue(policy["status"]) != "armed" {
+		t.Fatalf("expected first touch to carry armed delay policy, got %#v", firstTouch)
+	}
+}
+
+func TestPretouchTimingEngineReportsLeadFirstTouchOnAlreadyTouchedBar(t *testing.T) {
+	start := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	engine := testPretouchTimingEngine("fast", 0.75)
+
+	if decision, err := engine.EvaluateSignal(testPretouchSignalContext(start, 101)); err != nil || decision.Action != "wait" {
+		t.Fatalf("first evaluate failed decision=%#v err=%v", decision, err)
+	}
+	if decision, err := engine.EvaluateSignal(testPretouchSignalContext(start.Add(60*time.Second), 105.1)); err != nil || decision.Action != "advance-plan" {
+		t.Fatalf("expected first touch advance-plan, decision=%#v err=%v", decision, err)
+	}
+
+	decision, err := engine.EvaluateSignal(testPretouchSignalContext(start.Add(90*time.Second), 105.2))
+	if err != nil {
+		t.Fatalf("already touched evaluate failed: %v", err)
+	}
+	if decision.Action != "wait" || decision.Reason != "already_touched_this_bar" {
+		t.Fatalf("expected already_touched_this_bar wait, got %#v", decision)
+	}
+	firstTouch := mapValue(decision.Metadata["pretouchLeadFirstTouch"])
+	if got := stringValue(firstTouch["outcomeReason"]); got != "pretouch_fast_long" {
+		t.Fatalf("expected first touch outcome in already touched metadata, got %s in %#v", got, decision.Metadata)
+	}
+	if got := stringValue(decision.Metadata["t3OverlaySkippedReason"]); got != "lead_already_touched_this_bar" {
+		t.Fatalf("expected T3 skipped reason for already touched lead, got %s in %#v", got, decision.Metadata)
+	}
+	if intent := deriveLiveSignalIntent(decision, "ETHUSDT"); intent != nil {
+		t.Fatalf("expected already touched wait not to produce intent, got %#v", intent)
 	}
 }
 
@@ -1576,6 +1620,10 @@ func TestPretouchTimingEngineSkipsWhenModelMissing(t *testing.T) {
 	if decision.Action != "wait" || decision.Reason != "no_model_loaded" {
 		t.Fatalf("expected no_model_loaded wait, got %#v", decision)
 	}
+	firstTouch := mapValue(decision.Metadata["pretouchLeadFirstTouch"])
+	if got := stringValue(firstTouch["outcomeReason"]); got != "no_model_loaded" {
+		t.Fatalf("expected first touch no_model_loaded outcome, got %s in %#v", got, firstTouch)
+	}
 }
 
 func TestPretouchTimingEngineSkipsUnknownTimingRegime(t *testing.T) {
@@ -1589,6 +1637,10 @@ func TestPretouchTimingEngineSkipsUnknownTimingRegime(t *testing.T) {
 	}
 	if decision.Action != "wait" || decision.Reason != "timing_skip" {
 		t.Fatalf("expected timing_skip wait, got %#v", decision)
+	}
+	firstTouch := mapValue(decision.Metadata["pretouchLeadFirstTouch"])
+	if got := stringValue(firstTouch["outcomeReason"]); got != "timing_skip" {
+		t.Fatalf("expected first touch timing_skip outcome, got %s in %#v", got, firstTouch)
 	}
 }
 
